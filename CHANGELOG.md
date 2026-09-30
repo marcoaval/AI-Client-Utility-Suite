@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+- Full-history chat search that loads older sidebar conversations before searching and returns the sidebar to the top when loading finishes.
+- Shared Prompt Library storage across ChatGPT and Claude using Tampermonkey userscript storage.
+- Prompt export to JSON and import from JSON backups.
+
+### Improved
+- Added spacing between prompt titles and action buttons in the Prompt Library.
+- Existing prompt data stored by earlier versions is migrated into shared userscript storage.
+
+### Community
+- Thanks to @sam-cre for reporting the cross-client prompt storage issue, Prompt Library spacing issue, and prompt export/import request in issues #1, #2, and #3.
+
 ## 0.1.1
 
 ### Improvements
