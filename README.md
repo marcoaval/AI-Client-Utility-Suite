@@ -43,4 +43,4 @@ Prompt Library data is stored locally in the browser using localStorage. The use
 
 ## License
 
-See `LICENSE`.
+This project is source-available for personal, educational, and other non-commercial use. Commercial use, resale, paid licensing, or inclusion in a paid product or service requires permission from the copyright holder. See `LICENSE` for the full terms.
