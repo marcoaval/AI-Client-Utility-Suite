@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.6
+
+### Removed
+- Removed the ChatGPT native Search integration, automatic launcher scan, background Search indexing, and scan progress popup.
+
+### Changed
+- AI Tools opens its menu immediately. Search, cleaner, and archive tools continue using sidebar history and the persistent cache.
+- Exclude dialog results from sidebar collection. Existing cache data, date handling, and protected cleaner filters are preserved; Refresh history rebuilds the cache from the sidebar.
+
 ## 0.5.5
 
 ### Added

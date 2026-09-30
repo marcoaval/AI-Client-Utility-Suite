@@ -10,12 +10,10 @@ Search across the full chat history by automatically loading older sidebar entri
 ### Chat Cleaner
 Review the full chat history, use suggested and protected title filters, manually select conversations, and delete selected chats only after confirmation.
 
-### Automatic ChatGPT Search indexing
-Use ChatGPT's native **Search chats** normally. The suite automatically caches conversation links and exposed dates as results load, including when you search or scroll. Close Search and open Chat Cleaner to review the cached chats. There is no separate indexing button or finish step.
+### Cached history and dates
+Click **AI Tools** to open the tools menu directly. History is loaded through the sidebar and cached for later use. The suite does not open or index ChatGPT's native Search chats.
 
-Clicking **AI Tools** also opens native Search chats and scans the available results automatically. A **Searching through your chats…** popup shows the count and provides **Stop and open tools**. The tools menu opens after the scan. The scanner waits up to 45 seconds for Search to open or initial results to arrive, waits at least 15 seconds without new results at the bottom, and continues waiting while Search reports loading. Scans have a three-minute limit; a timeout preserves results and reports that coverage may be incomplete. Existing search queries are preserved. The scanner does not invent a query or assume empty-query results contain every conversation.
-
-This supplements the sidebar scan; a search only covers the results ChatGPT exposes, not necessarily your entire history. Dates are saved when a result exposes a `time` element or a sidebar date group. Missing dates remain **Unknown date**. Relative date groups are saved as calendar ranges when indexed so their dates do not drift as the cache ages. Date selection includes a grouped chat only when its whole known range fits inside the chosen range. Previously cached relative groups can be rebuilt with **Refresh history**.
+Dates are saved when sidebar entries expose a `time` element or a date group. Missing dates remain **Unknown date**. Relative date groups are saved as calendar ranges when indexed so their dates do not drift as the cache ages. Date selection includes a grouped chat only when its whole known range fits inside the chosen range. Use **Refresh history** to rebuild the cache from the sidebar.
 
 ### Prompt Library
 Save reusable prompts in Tampermonkey storage so the same library is available on both ChatGPT and Claude. Prompts can also be exported to and imported from a JSON backup.
@@ -57,7 +55,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Early development. Version 0.5.5 combines sidebar search, automatic ChatGPT Search indexing, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
+Early development. Version 0.5.6 combines sidebar search, cached history and date selection, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
 
 ## Privacy
 
