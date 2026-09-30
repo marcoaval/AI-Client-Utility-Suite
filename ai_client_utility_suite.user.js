@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.6.0
+// @version      1.0.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -20,6 +20,9 @@
   const CLEANER_FILTER_KEY = "aiClientUtilitySuite.cleanerFilters";
   const CHAT_CACHE_KEY = "aiClientUtilitySuite.chatCache";
   const CHAT_SORT_KEY = "aiClientUtilitySuite.chatSort";
+  const SETTINGS_KEY = "aiClientUtilitySuite.settings";
+  const LOCKS_KEY = "aiClientUtilitySuite.lockedChats";
+  const SCAN_KEY = "aiClientUtilitySuite.historyScan";
   const DEFAULT_CLEANER_FILTERS = {
     suggested: [
       "health", "medical", "doctor", "symptom", "injury",
@@ -37,8 +40,54 @@
   };
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   let cachedHistory = null;
+  let libraryView = { query: '', folder: '', favorites: false };
 
   const platform = () => location.hostname.includes("claude.ai") ? "Claude" : "ChatGPT";
+
+  function readStored(key, fallback) {
+    try {
+      const value = GM_getValue(key, fallback);
+      return typeof value === 'string' ? JSON.parse(value) : value;
+    } catch { return fallback; }
+  }
+
+  function normalizeSettings(value) {
+    return {
+      theme: ['auto', 'light', 'dark'].includes(value?.theme) ? value.theme : 'auto',
+      textSize: ['standard', 'large'].includes(value?.textSize) ? value.textSize : 'standard',
+      sort: value?.sort === 'oldest' ? 'oldest' : 'newest',
+      cleanerView: ['all', 'unprotected', 'suggested'].includes(value?.cleanerView) ? value.cleanerView : 'all'
+    };
+  }
+
+  function loadSettings() {
+    return normalizeSettings(readStored(SETTINGS_KEY, { sort: GM_getValue(CHAT_SORT_KEY, 'newest') }));
+  }
+
+  function lockedChats() {
+    const saved = readStored(`${LOCKS_KEY}.${platform().toLowerCase()}`, []);
+    return new Set(Array.isArray(saved) ? saved.filter(value => typeof value === 'string') : []);
+  }
+
+  function isChatLocked(chat) { return lockedChats().has(chat.href); }
+
+  function setChatLocked(chat, locked) {
+    const saved = lockedChats();
+    if (locked) saved.add(chat.href);
+    else saved.delete(chat.href);
+    GM_setValue(`${LOCKS_KEY}.${platform().toLowerCase()}`, JSON.stringify([...saved]));
+  }
+
+  function historyCoverage(count) {
+    const scan = readStored(`${SCAN_KEY}.${platform().toLowerCase()}`, null);
+    const date = scan?.at && new Date(scan.at);
+    const stamp = date && Number.isFinite(date.getTime()) ? date.toLocaleString() : 'Not refreshed yet';
+    return `${count} indexed chats · Last sidebar scan: ${stamp}.${scan && !scan.reachedEnd ? ' Sidebar scan may be incomplete.' : ''} Only chats found in the sidebar are included.`;
+  }
+
+  function recordHistoryScan(count, reachedEnd) {
+    GM_setValue(`${SCAN_KEY}.${platform().toLowerCase()}`, JSON.stringify({ at: Date.now(), count, reachedEnd }));
+  }
 
   function cacheStorageKey() {
     return `${CHAT_CACHE_KEY}.${platform().toLowerCase()}`;
@@ -84,7 +133,9 @@
       const key = `${name}\n${text}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      prompts.push({ name, text });
+      const fields = templateFields(text);
+      const defaults = Object.fromEntries(fields.map(field => [field, typeof value?.defaults?.[field] === 'string' ? value.defaults[field] : '']));
+      prompts.push({ name, text, folder: String(value?.folder || '').trim(), favorite: value?.favorite === true, defaults });
     }
 
     return prompts;
@@ -114,6 +165,15 @@
 
   function savePrompts(prompts) {
     GM_setValue(STORAGE_KEY, JSON.stringify(normalizePrompts(prompts)));
+  }
+
+  function templateFields(text) {
+    return [...new Set([...String(text).matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)].map(match => match[1].trim()).filter(Boolean))];
+  }
+
+  function fillTemplate(text, values) {
+    return String(text).replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (match, key) =>
+      Object.hasOwn(values, key.trim()) ? String(values[key.trim()]) : match);
   }
 
   function cleanFilterList(values) {
@@ -191,7 +251,7 @@
   }
 
   function classify(chat) {
-    return classifyForCleaner(chat, activeFilters);
+    return { ...classifyForCleaner(chat, activeFilters), locked: isChatLocked(chat) };
   }
 
   function chatLinkElements() {
@@ -323,6 +383,7 @@
 
     let containers = scrollContainersForChats();
     if (!containers.length) {
+      recordHistoryScan(collected.size, false);
       onProgress?.(collected.size, false);
       return [...collected.values()];
     }
@@ -402,6 +463,7 @@
     await sleep(150);
     mergeChats(collected, getChatLinks());
     onProgress?.(collected.size, false);
+    recordHistoryScan(collected.size, stablePasses >= 10);
     return [...collected.values()];
   }
 
@@ -654,6 +716,8 @@
   }
 
   async function archiveChat(chat) {
+    if (isChatLocked(chat)) throw new Error('This chat is locked. Unlock it in Chat Cleaner first.');
+    if (confirmationDeleteAction() || confirmationArchiveAction()) throw new Error('Close the existing chat confirmation before retrying.');
     await openChatMenu(chat);
 
     const archiveAction = await waitFor(menuArchiveAction, 3000, 80);
@@ -715,7 +779,8 @@
   }
 
   async function deleteChat(chat) {
-    if (confirmationDeleteAction()) throw new Error('Close the existing delete confirmation before retrying.');
+    if (isChatLocked(chat)) throw new Error('This chat is locked. Unlock it in Chat Cleaner first.');
+    if (confirmationDeleteAction() || confirmationArchiveAction()) throw new Error('Close the existing chat confirmation before retrying.');
     await openChatMenu(chat);
 
     const deleteAction = await waitFor(menuDeleteAction, 3000, 80);
@@ -735,24 +800,39 @@
     await sleep(200);
   }
 
-  function modal(title, body, onBack = openMenu) {
+  function modal(title, body, onBack = openMenu, backLabel = 'Back to AI Tools') {
     document.getElementById(APP_ID + "-modal")?.remove();
     const wrap = document.createElement("div");
     wrap.id = APP_ID + "-modal";
     wrap.innerHTML = `
       <div class="acus-backdrop">
-        <div class="acus-modal">
-          <div class="acus-head"><button class="acus-back" aria-label="Back to AI Tools">←</button><strong>${title}</strong><button class="acus-close" aria-label="Close">×</button></div>
+        <div class="acus-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+          <div class="acus-head"><button class="acus-back" aria-label="${escapeHtml(backLabel)}">←</button><strong>${escapeHtml(title)}</strong><button class="acus-close" aria-label="Close">×</button></div>
           <div class="acus-body"></div>
         </div>
       </div>`;
     wrap.querySelector(".acus-body").append(body);
+    applyAppearance(wrap.querySelector('.acus-modal'));
     const back = wrap.querySelector('.acus-back');
     back.hidden = !onBack;
     back.onclick = () => { wrap.remove(); onBack?.(); };
-    wrap.querySelector(".acus-close").onclick = () => wrap.remove();
-    wrap.querySelector(".acus-backdrop").onclick = e => { if (e.target === e.currentTarget) wrap.remove(); };
+    const dismiss = () => { wrap.remove(); document.getElementById(APP_ID + '-launcher')?.focus(); };
+    wrap.querySelector(".acus-close").onclick = dismiss;
+    wrap.querySelector(".acus-backdrop").onclick = e => { if (e.target === e.currentTarget) dismiss(); };
     document.body.append(wrap);
+    wrap.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        wrap.remove();
+        document.getElementById(APP_ID + '-launcher')?.focus();
+      }
+      if (event.key === 'Tab') {
+        const controls = [...wrap.querySelectorAll('button,input,textarea,select,a[href]')].filter(element => !element.disabled && visible(element));
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    });
+    wrap.querySelector('button:not([hidden])')?.focus();
     return wrap;
   }
 
@@ -802,11 +882,10 @@
     input.focus();
   }
 
-  function exportPrompts() {
-    const prompts = loadPrompts();
+  function exportPrompts(prompts = loadPrompts()) {
     const payload = JSON.stringify({
       format: "ai-client-utility-suite-prompts",
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       prompts
     }, null, 2);
@@ -847,100 +926,145 @@
     picker.click();
   }
 
-  function promptLibrary() {
-    const box = document.createElement("div");
+  function promptLibrary(message = '') {
+    const box = document.createElement('div');
     box.innerHTML = `
-      <div class="acus-library-tools">
-        <button class="acus-secondary acus-export">Export prompts</button>
-        <button class="acus-secondary acus-import">Import prompts</button>
-        <span class="acus-library-status"></span>
-      </div>
-      <div class="acus-prompt-form">
-        <input class="acus-input acus-title" placeholder="Prompt name">
-        <textarea class="acus-input acus-text" placeholder="Prompt text"></textarea>
-        <button class="acus-primary acus-save">Save prompt</button>
-      </div>
-      <div class="acus-prompts"></div>`;
-
-    const status = box.querySelector(".acus-library-status");
-    const setStatus = (message, isError = false) => {
-      status.textContent = message;
-      status.className = isError ? "acus-library-status acus-error" : "acus-library-status";
-    };
-
+      <div class="acus-library-tools"><button class="acus-export">Export library</button><button class="acus-import">Import library</button><button class="acus-add acus-primary">New prompt</button></div>
+      <p class="acus-muted">Save a prompt, or use {{field name}} to make a fillable template. Your library is shared across both clients.</p>
+      <label class="acus-field">Search library<input class="acus-input acus-search" type="search" placeholder="Search names or prompt text"></label>
+      <div class="acus-library-tools"><label class="acus-field">Folder<select class="acus-input acus-folder-filter"></select></label><label class="acus-check"><input class="acus-favorites" type="checkbox"> Favorites only</label></div>
+      <p class="acus-library-status" role="status"></p><div class="acus-prompts"></div>`;
+    const status = box.querySelector('.acus-library-status');
+    const setStatus = (message, isError = false) => { status.textContent = message; status.classList.toggle('acus-error', isError); };
+    const search = box.querySelector('.acus-search');
+    const folderFilter = box.querySelector('.acus-folder-filter');
+    const favorites = box.querySelector('.acus-favorites');
+    search.value = libraryView.query;
+    favorites.checked = libraryView.favorites;
+    let initialFolder = libraryView.folder;
     const render = () => {
-      const list = box.querySelector(".acus-prompts");
-      list.innerHTML = "";
       const prompts = loadPrompts();
-
-      if (!prompts.length) {
-        list.innerHTML = '<div class="acus-muted">No saved prompts yet.</div>';
-        return;
+      const selectedFolder = initialFolder ?? folderFilter.value;
+      initialFolder = null;
+      folderFilter.replaceChildren();
+      for (const folder of ['', ...new Set(prompts.map(p => p.folder).filter(Boolean))]) {
+        const option = document.createElement('option'); option.value = folder; option.textContent = folder || 'All folders'; folderFilter.append(option);
       }
-
-      prompts.forEach((p, i) => {
-        const row = document.createElement("div");
-        row.className = "acus-prompt";
-
-        const name = document.createElement("strong");
-        name.textContent = p.name;
-
-        const actions = document.createElement("div");
-        actions.className = "acus-prompt-actions";
-
-        const copy = document.createElement("button");
-        copy.textContent = "Copy";
-        copy.onclick = () => navigator.clipboard.writeText(p.text);
-
-        const del = document.createElement("button");
-        del.textContent = "Delete";
+      folderFilter.value = selectedFolder;
+      if (folderFilter.selectedIndex < 0) folderFilter.value = '';
+      box.querySelector('.acus-export').textContent = folderFilter.value ? 'Export folder' : 'Export library';
+      const list = box.querySelector('.acus-prompts');
+      list.replaceChildren();
+      const query = search.value.trim().toLowerCase();
+      libraryView = { query: search.value, folder: folderFilter.value, favorites: favorites.checked };
+      const matches = prompts.map((prompt, index) => ({ prompt, index })).filter(({ prompt: p }) =>
+        (!query || `${p.name}\n${p.text}`.toLowerCase().includes(query)) && (!folderFilter.value || p.folder === folderFilter.value) && (!favorites.checked || p.favorite));
+      matches.sort((a, b) => Number(b.prompt.favorite) - Number(a.prompt.favorite));
+      if (!matches.length) {
+        const empty = document.createElement('p'); empty.className = 'acus-muted';
+        empty.textContent = prompts.length ? 'No prompts match. Change the folder or clear your search.' : 'Your library is empty. Choose New prompt to save your first one.';
+        list.append(empty);
+      }
+      for (const { prompt: p, index } of matches) {
+        const row = document.createElement('div'); row.className = 'acus-prompt';
+        const name = document.createElement('strong'); name.textContent = p.name;
+        const detail = document.createElement('p'); detail.className = 'acus-muted';
+        const fields = templateFields(p.text);
+        detail.textContent = `${p.folder || 'Unfiled'} · ${fields.length ? `${fields.length} template field${fields.length === 1 ? '' : 's'}` : 'Ready to copy'}`;
+        const preview = document.createElement('p'); preview.className = 'acus-muted'; preview.textContent = p.text.length > 160 ? p.text.slice(0, 160) + '…' : p.text;
+        const actions = document.createElement('div'); actions.className = 'acus-prompt-actions';
+        const use = button(fields.length ? 'Fill template' : 'Copy prompt'); use.className = 'acus-primary';
+        use.onclick = () => fields.length ? promptTemplate(p, index, () => promptLibrary()) : copyText(p.text, setStatus);
+        const favorite = button(p.favorite ? '★ Favorited' : '☆ Favorite');
+        favorite.setAttribute('aria-pressed', String(p.favorite));
+        favorite.onclick = () => { const next = loadPrompts(); next[index].favorite = !next[index].favorite; savePrompts(next); render(); };
+        const edit = button('Edit'); edit.onclick = () => promptEditor(p, index);
+        const del = button('Delete');
         del.onclick = () => {
-          const next = loadPrompts();
-          next.splice(i, 1);
-          savePrompts(next);
-          render();
+          if (!confirm(`Delete the saved prompt "${p.name}"?`)) return;
+          const next = loadPrompts(); next.splice(index, 1); savePrompts(next); render(); setStatus('Prompt deleted.');
         };
-
-        actions.append(copy, del);
-
-        const text = document.createElement("div");
-        text.className = "acus-muted";
-        text.textContent = p.text.length > 160 ? p.text.slice(0, 160) + "…" : p.text;
-
-        row.append(name, actions, text);
-        list.append(row);
-      });
+        actions.append(use, favorite, edit, del);
+        row.append(name, detail, preview, actions); list.append(row);
+      }
     };
-
-    box.querySelector(".acus-save").onclick = () => {
-      const name = box.querySelector(".acus-title").value.trim();
-      const text = box.querySelector(".acus-text").value.trim();
-      if (!name || !text) return;
-
-      savePrompts([{ name, text }, ...loadPrompts()]);
-      box.querySelector(".acus-title").value = "";
-      box.querySelector(".acus-text").value = "";
-      setStatus("Prompt saved.");
-      render();
+    search.oninput = render; folderFilter.onchange = render; favorites.onchange = render;
+    box.querySelector('.acus-add').onclick = () => promptEditor();
+    box.querySelector('.acus-export').onclick = () => {
+      exportPrompts(loadPrompts().filter(p => !folderFilter.value || p.folder === folderFilter.value));
+      setStatus(folderFilter.value ? 'Folder pack downloaded, including template defaults.' : 'Library export downloaded, including folders, favorites, and template defaults.');
     };
+    box.querySelector('.acus-import').onclick = () => importPrompts((message, isError) => { setStatus(message, isError); if (!isError) render(); });
+    render(); setStatus(typeof message === 'string' ? message : ''); modal('Prompt Library', box);
+  }
 
-    box.querySelector(".acus-export").onclick = () => {
-      exportPrompts();
-      setStatus("Prompt export downloaded.");
+  async function copyText(text, setStatus) {
+    try { await navigator.clipboard.writeText(text); setStatus('Copied to clipboard.'); }
+    catch { setStatus('Copy failed. Select and copy the preview text manually.', true); }
+  }
+
+  function promptEditor(prompt = { name: '', text: '', folder: '', favorite: false, defaults: {} }, index = null) {
+    const box = document.createElement('div');
+    box.innerHTML = `<p class="acus-muted">Use {{topic}} or another field name wherever you want a fillable value. Repeated fields use the same value.</p>
+      <label class="acus-field">Prompt name<input class="acus-input acus-title" required></label>
+      <label class="acus-field">Folder<input class="acus-input acus-folder" placeholder="Optional, for example Work" list="acus-folders"></label><datalist id="acus-folders"></datalist>
+      <label class="acus-field">Prompt text<textarea class="acus-input acus-text" required placeholder="Explain {{topic}} for someone at {{experience level}}."></textarea></label>
+      <label class="acus-check"><input class="acus-favorite" type="checkbox"> Add to favorites</label>
+      <p class="acus-muted acus-field-count"></p><div class="acus-prompt-actions"><button class="acus-save acus-primary">Save prompt</button><button class="acus-preview">Preview template</button></div><p class="acus-library-status" role="status"></p>`;
+    const name = box.querySelector('.acus-title'), text = box.querySelector('.acus-text'), folder = box.querySelector('.acus-folder'), favorite = box.querySelector('.acus-favorite');
+    name.value = prompt.name; text.value = prompt.text; folder.value = prompt.folder || ''; favorite.checked = prompt.favorite;
+    for (const value of new Set(loadPrompts().map(p => p.folder).filter(Boolean))) { const option = document.createElement('option'); option.value = value; box.querySelector('datalist').append(option); }
+    const status = box.querySelector('.acus-library-status');
+    const draft = () => ({ ...prompt, name: name.value.trim(), text: text.value.trim(), folder: folder.value.trim(), favorite: favorite.checked });
+    const update = () => { const count = templateFields(text.value).length; box.querySelector('.acus-field-count').textContent = count ? `${count} fillable field${count === 1 ? '' : 's'} detected. Values can span multiple lines.` : 'No template fields. This prompt will copy as written.'; };
+    text.oninput = update; update();
+    box.querySelector('.acus-save').onclick = () => {
+      const value = draft();
+      if (!value.name || !value.text) { status.textContent = 'Enter a name and prompt text before saving.'; (!value.name ? name : text).focus(); return; }
+      const next = loadPrompts(); if (index === null) next.unshift(value); else next[index] = value;
+      savePrompts(next);
+      libraryView = { query: '', folder: value.folder, favorites: false };
+      promptLibrary('Prompt saved.');
     };
-
-    box.querySelector(".acus-import").onclick = () => {
-      importPrompts((message, isError) => {
-        setStatus(message, isError);
-        if (!isError) render();
-      });
+    box.querySelector('.acus-preview').onclick = () => {
+      const value = draft();
+      if (!value.text) { status.textContent = 'Enter prompt text to preview.'; text.focus(); return; }
+      promptTemplate(value, null, () => { modal(index === null ? 'New prompt' : 'Edit prompt', box, promptLibrary, 'Back to Prompt Library'); });
     };
+    modal(index === null ? 'New prompt' : 'Edit prompt', box, promptLibrary, 'Back to Prompt Library'); name.focus();
+  }
 
-    render();
-    modal("Prompt Library", box);
+  function promptTemplate(prompt, index, onBack) {
+    const box = document.createElement('div');
+    const intro = document.createElement('p'); intro.className = 'acus-muted'; intro.textContent = 'Fill in the fields, check the finished prompt, then copy it into your chat.'; box.append(intro);
+    const inputs = {};
+    for (const key of templateFields(prompt.text)) {
+      const label = document.createElement('label'); label.className = 'acus-field'; label.textContent = key;
+      const input = document.createElement('textarea'); input.className = 'acus-input acus-template-value'; input.value = prompt.defaults?.[key] || ''; input.rows = 2;
+      Object.defineProperty(inputs, key, { value: input, enumerable: true }); label.append(input); box.append(label);
+    }
+    const previewLabel = document.createElement('label'); previewLabel.className = 'acus-field'; previewLabel.textContent = 'Finished prompt';
+    const preview = document.createElement('textarea'); preview.className = 'acus-input'; preview.readOnly = true; previewLabel.append(preview); box.append(previewLabel);
+    const status = document.createElement('p'); status.setAttribute('role', 'status'); status.className = 'acus-library-status';
+    const actions = document.createElement('div'); actions.className = 'acus-prompt-actions';
+    const copy = button('Copy finished prompt'); copy.className = 'acus-primary';
+    const values = () => Object.fromEntries(Object.entries(inputs).map(([key, input]) => [key, input.value]));
+    const update = () => { preview.value = fillTemplate(prompt.text, values()); copy.disabled = Object.values(inputs).some(input => !input.value.trim()); status.textContent = copy.disabled ? 'Fill every field to copy the finished prompt.' : 'Ready to copy.'; };
+    for (const input of Object.values(inputs)) input.oninput = update;
+    copy.onclick = () => copyText(preview.value, (message, error) => { status.textContent = message; status.classList.toggle('acus-error', !!error); });
+    actions.append(copy);
+    if (index !== null) {
+      const save = button('Save these values as defaults');
+      save.onclick = () => { const next = loadPrompts(); next[index].defaults = values(); savePrompts(next); status.textContent = 'Default values saved for this template.'; };
+      actions.append(save);
+    }
+    box.append(actions, status); update();
+    modal(prompt.name || 'Template preview', box, onBack, 'Back to previous screen'); Object.values(inputs)[0]?.focus();
   }
 
   function detectDarkMode() {
+    const preference = loadSettings().theme;
+    if (preference !== 'auto') return preference === 'dark';
     const background = getComputedStyle(document.body).backgroundColor;
     const values = background.match(/[\d.]+/g);
 
@@ -994,6 +1118,52 @@
       shadow: '0 24px 80px rgba(24,24,27,.18)',
       overlay: 'rgba(24,24,27,.48)'
     };
+  }
+
+  function applyAppearance(panel) {
+    const theme = cleanerTheme();
+    for (const [key, value] of Object.entries(theme)) panel.style.setProperty(`--acus-${key}`, value);
+    panel.dataset.textSize = loadSettings().textSize;
+  }
+
+  function settingsScreen() {
+    const box = document.createElement('div');
+    const settings = loadSettings();
+    const intro = document.createElement('p');
+    intro.className = 'acus-muted';
+    intro.textContent = 'Make the suite comfortable to read and choose how Chat Cleaner opens.';
+    box.append(intro);
+    const choices = {};
+    for (const [key, label, options] of [
+      ['theme', 'Appearance', [['auto', 'Match the page'], ['light', 'Light'], ['dark', 'Dark']]],
+      ['textSize', 'Text size', [['standard', 'Standard'], ['large', 'Large']]],
+      ['sort', 'Default chat order', [['newest', 'Newest first'], ['oldest', 'Oldest first']]],
+      ['cleanerView', 'Default cleaner view', [['all', 'All chats'], ['unprotected', 'Hide protected'], ['suggested', 'Suggested only']]]
+    ]) {
+      const field = document.createElement('label');
+      field.className = 'acus-field';
+      field.textContent = label;
+      const select = document.createElement('select');
+      select.className = 'acus-input';
+      for (const [value, text] of options) { const option = document.createElement('option'); option.value = value; option.textContent = text; select.append(option); }
+      select.value = settings[key];
+      choices[key] = select;
+      field.append(select);
+      box.append(field);
+    }
+    const save = button('Save settings');
+    save.className = 'acus-primary';
+    const status = document.createElement('p');
+    status.setAttribute('role', 'status');
+    save.onclick = () => {
+      const next = normalizeSettings(Object.fromEntries(Object.entries(choices).map(([key, select]) => [key, select.value])));
+      GM_setValue(SETTINGS_KEY, JSON.stringify(next));
+      GM_setValue(CHAT_SORT_KEY, next.sort);
+      applyAppearance(box.closest('.acus-modal'));
+      status.textContent = 'Settings saved. New tool windows will use these preferences.';
+    };
+    box.append(save, status);
+    modal('Settings', box);
   }
 
   function startOfDay(date) {
@@ -1114,7 +1284,7 @@
   }
 
   function chatMatchesNumberRange(chat, range) {
-    return Boolean(range && !chat.protectedMatches?.length && chat.chatNumber >= range.start && chat.chatNumber <= range.end);
+    return Boolean(range && !chat.locked && !chat.protectedMatches?.length && chat.chatNumber >= range.start && chat.chatNumber <= range.end);
   }
 
   function sortNumberedChats(chats, order) {
@@ -1124,8 +1294,8 @@
   function chatMatchesView(chat, selected, query, view) {
     if (!String(chat.title || '').toLowerCase().includes(query.trim().toLowerCase())) return false;
     if (view === 'selected') return selected;
-    if (view === 'unprotected') return !chat.protectedMatches?.length;
-    if (view === 'suggested') return !!chat.likelyPersonal;
+    if (view === 'unprotected') return !chat.locked && !chat.protectedMatches?.length;
+    if (view === 'suggested') return !chat.locked && !!chat.likelyPersonal;
     return true;
   }
 
@@ -1158,6 +1328,7 @@
     const theme = cleanerTheme();
     const overlay = document.createElement('div');
     overlay.id = 'vanick-cleaner-overlay';
+    overlay.dataset.textSize = loadSettings().textSize;
     overlay.style.cssText = `
       --vc-panel:${theme.panel};
       --vc-surface:${theme.surface};
@@ -1267,12 +1438,18 @@
       #vanick-cleaner-overlay .vc-date-controls{gap:10px;padding:16px 20px;background:var(--vc-accent-soft);border-top:1px solid var(--vc-accent-border);border-bottom:1px solid var(--vc-accent-border)}
       #vanick-cleaner-overlay .vc-field{display:grid;gap:6px;font-size:12px;font-weight:700;color:var(--vc-text)}
       #vanick-cleaner-overlay .vc-date-controls>.vc-button{align-self:end}
-      #vanick-cleaner-overlay .vc-row{padding:14px;border-color:var(--vc-border-strong)}
+      #vanick-cleaner-overlay .vc-row{grid-template-columns:24px minmax(0,1fr) auto;padding:14px;border-color:var(--vc-border-strong)}
+      #vanick-cleaner-overlay .vc-lock{font-size:12px;min-height:38px;padding:8px}
       #vanick-cleaner-overlay .vc-row.vc-selected{border:2px solid var(--vc-accent);padding:13px;background:var(--vc-accent-soft);box-shadow:inset 4px 0 var(--vc-accent)}
       #vanick-cleaner-overlay .vc-checkbox{width:21px;height:21px}
       #vanick-cleaner-overlay .vc-chat-title{font-size:14px}
       #vanick-cleaner-overlay .vc-detail{font-size:12px}
       #vanick-cleaner-overlay .vc-footer{border-top:2px solid var(--vc-border-strong);background:var(--vc-surface)}
+      #vanick-cleaner-overlay .vc-footer>div:first-child{flex-basis:100%!important}
+      #vanick-cleaner-overlay .vc-footer-actions{width:100%;align-items:end;justify-content:flex-end;flex-wrap:wrap}
+      #vanick-cleaner-overlay .vc-footer-actions>.vc-field{margin-right:auto}
+      #vanick-cleaner-overlay[data-text-size="large"] .vc-button,#vanick-cleaner-overlay[data-text-size="large"] .vc-input,#vanick-cleaner-overlay[data-text-size="large"] .vc-chat-title{font-size:16px}
+      #vanick-cleaner-overlay[data-text-size="large"] .vc-detail,#vanick-cleaner-overlay[data-text-size="large"] .vc-subtitle,#vanick-cleaner-overlay[data-text-size="large"] .vc-field,#vanick-cleaner-overlay[data-text-size="large"] .vc-status{font-size:14px}
       #vanick-cleaner-overlay .vc-status{font-size:12px;color:var(--vc-text)}
       #vanick-cleaner-overlay .vc-action-group{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px;border:1px solid var(--vc-border);border-radius:10px}
       #vanick-cleaner-overlay .vc-action-label{font-size:11px;font-weight:750;color:var(--vc-muted);width:100%}
@@ -1280,17 +1457,24 @@
       #vanick-cleaner-overlay .vc-header,#vanick-cleaner-overlay .vc-toolbar,#vanick-cleaner-overlay .vc-date-controls,#vanick-cleaner-overlay .vc-footer{flex-shrink:0}
       #vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{flex:1;min-height:100px}
       #vanick-cleaner-overlay .vc-toolbar:has(.vc-toolbar-actions){display:block;padding:10px 20px}
-      #vanick-cleaner-overlay .vc-toolbar-actions{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:8px;margin-top:8px}
+      #vanick-cleaner-overlay .vc-toolbar-actions{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:8px;margin-top:8px}
       #vanick-cleaner-overlay .vc-action-group{gap:6px}
       #vanick-cleaner-overlay .vc-action-group .vc-button{padding:8px 10px;font-size:12px;min-height:38px}
       @media(max-width:640px),(max-height:800px){#vanick-cleaner-overlay .vc-panel{overflow:auto;max-height:calc(100vh - 48px)}#vanick-cleaner-overlay .vc-header{position:sticky;top:0;z-index:2;background:var(--vc-panel)}#vanick-cleaner-overlay .vc-footer{position:sticky;bottom:0;z-index:2}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{flex:none;max-height:320px;overflow:auto}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}}
       @media(max-width:640px){#vanick-cleaner-overlay .vc-toolbar-actions{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-date-controls>.vc-button{grid-column:1/-1}#vanick-cleaner-overlay .vc-footer-actions{flex-wrap:wrap}}
       @media (max-width:640px){#vanick-cleaner-overlay{padding:10px}#vanick-cleaner-overlay .vc-date-controls{grid-template-columns:1fr 1fr}#vanick-cleaner-overlay .vc-panel{max-height:92vh;border-radius:16px}#vanick-cleaner-overlay .vc-header{padding:18px 16px 14px}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{padding:10px}#vanick-cleaner-overlay .vc-filter-grid{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-footer{padding:12px}#vanick-cleaner-overlay .vc-chat-head{align-items:flex-start}#vanick-cleaner-overlay .vc-chat-title{white-space:normal}}
+      #vanick-cleaner-overlay .vc-range{flex-shrink:0;border-bottom:1px solid var(--vc-border)}
+      #vanick-cleaner-overlay .vc-range>summary{padding:12px 20px;min-height:44px;color:var(--vc-text);font-size:13px;font-weight:700;cursor:pointer;background:var(--vc-accent-soft)}
+      #vanick-cleaner-overlay .vc-range>summary:focus-visible{outline:3px solid var(--vc-accent);outline-offset:-3px}
+      #vanick-cleaner-overlay[data-text-size="large"] .vc-button,#vanick-cleaner-overlay[data-text-size="large"] .vc-input,#vanick-cleaner-overlay[data-text-size="large"] .vc-chat-title{font-size:16px}
     `;
     overlay.appendChild(style);
 
     const panel = document.createElement('div');
     panel.className = 'vc-panel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-label', 'Chat Cleaner');
 
     const header = document.createElement('div');
     header.className = 'vc-header';
@@ -1306,7 +1490,7 @@
     headingText.style.minWidth = '0';
     headingText.innerHTML = `
       <div class="vc-title-row"><div class="vc-title">Chat Cleaner</div><span class="vc-platform">${escapeHtml(current)}</span></div>
-      <div class="vc-subtitle">Choose a chat range or check individual chats. Review your selection, then confirm deletion.</div>
+      <div class="vc-subtitle">Select chats, review the list, then choose Archive or Delete. Lock anything you want to keep.</div>
     `;
 
     brand.append(icon, headingText);
@@ -1368,6 +1552,7 @@
     let running = false;
     let stopRequested = false;
     let failedItems = [];
+    let failedKind = 'delete';
 
     const viewControls = document.createElement('div');
     viewControls.className = 'vc-toolbar';
@@ -1385,6 +1570,7 @@
       option.textContent = label;
       viewFilter.append(option);
     }
+    viewFilter.value = loadSettings().cleanerView;
     const viewCount = document.createElement('span');
     viewCount.className = 'vc-subtitle';
     viewCount.setAttribute('aria-live', 'polite');
@@ -1406,11 +1592,11 @@
     function refreshView() {
       let shown = 0;
       for (const item of rows) {
-        const matches = !item.deleted && chatMatchesView(item.chat, item.checkbox.checked, titleSearch.value, viewFilter.value);
+        const matches = !item.removed && chatMatchesView(item.chat, item.checkbox.checked, titleSearch.value, viewFilter.value);
         item.row.hidden = !matches;
         if (matches) shown++;
       }
-      const hiddenSelected = rows.filter(item => !item.deleted && item.row.hidden && item.checkbox.checked).length;
+      const hiddenSelected = rows.filter(item => !item.removed && item.row.hidden && item.checkbox.checked).length;
       viewCount.textContent = `${shown} shown${hiddenSelected ? ` · ${hiddenSelected} selected outside this view` : ''}`;
       viewEmpty.hidden = shown > 0 || !chats.length;
     }
@@ -1421,17 +1607,20 @@
       updateBackLabel();
       refreshView();
       const selected = rows.filter(item => item.checkbox.checked).length;
-      summary.textContent = filterMode ? `${activeFilters.suggested.length} suggested filters · ${activeFilters.protected.length} protected filters` : `${rows.filter(item => !item.deleted).length} loaded · ${selected} selected`;
+      coverage.textContent = historyCoverage(rows.filter(item => !item.removed).length);
+      summary.textContent = filterMode ? `${activeFilters.suggested.length} suggested filters · ${activeFilters.protected.length} protected filters` : `${rows.filter(item => !item.removed).length} loaded · ${selected} selected`;
       for (const item of rows) item.row.classList.toggle('vc-selected', item.checkbox.checked);
       if (remove) {
-        remove.textContent = selected ? `Delete selected (${selected})` : 'Delete selected';
+        const verb = cleanupAction.value === 'archive' ? 'Archive' : 'Delete';
+        remove.textContent = selected ? `${verb} selected (${selected})` : `${verb} selected`;
+        remove.className = cleanupAction.value === 'archive' ? 'vc-button vc-button-accent' : 'vc-button vc-button-danger';
         remove.disabled = selected === 0;
       }
       if (reviewSelected && !selectionMode) {
         reviewSelected.textContent = selected ? `Review selected (${selected})` : 'Review selected';
         reviewSelected.disabled = selected === 0;
       }
-      retry.disabled = !failedItems.some(item => !item.deleted && item.checkbox.checked);
+      retry.disabled = !failedItems.some(item => !item.removed && item.checkbox.checked);
     }
 
     for (const chat of displayChats()) {
@@ -1441,7 +1630,9 @@
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.className = 'vc-checkbox';
-      checkbox.checked = selectedHrefs.has(chat.href);
+      checkbox.setAttribute('aria-label', `Chat #${chat.chatNumber}: ${chat.title}`);
+      checkbox.checked = !chat.locked && selectedHrefs.has(chat.href);
+      checkbox.disabled = chat.locked;
       checkbox.addEventListener('change', refreshSelection);
 
       const info = document.createElement('div');
@@ -1456,12 +1647,31 @@
         : (chat.dateLabel || 'Unknown date');
       if (savedDate !== 'Unknown date') detailParts.push(`Date: ${savedDate}`);
 
-      const statusClass = chat.protectedMatches.length ? 'vc-pill-protected' : chat.likelyPersonal ? 'vc-pill-personal' : 'vc-pill-review';
-      const statusText = chat.protectedMatches.length ? 'Protected' : chat.likelyPersonal ? 'Suggested' : 'Review';
+      const statusClass = chat.locked || chat.protectedMatches.length ? 'vc-pill-protected' : chat.likelyPersonal ? 'vc-pill-personal' : 'vc-pill-review';
+      const statusText = chat.locked ? 'Locked' : chat.protectedMatches.length ? 'Protected' : chat.likelyPersonal ? 'Suggested' : 'Review';
 
       info.innerHTML = `<div class="vc-chat-head"><div class="vc-chat-title">#${chat.chatNumber} · ${escapeHtml(chat.title)}</div><span class="vc-pill ${statusClass}">${statusText}</span></div><div class="vc-detail">${escapeHtml(detailParts.join(' · '))}</div>`;
 
       row.append(checkbox, info);
+      const lock = button(chat.locked ? '🔒 Unlock' : '🔓 Lock');
+      lock.classList.add('vc-lock');
+      lock.setAttribute('aria-label', `${chat.locked ? 'Unlock' : 'Lock'} ${chat.title}`);
+      lock.setAttribute('aria-pressed', String(chat.locked));
+      lock.onclick = event => {
+        event.preventDefault();
+        chat.locked = !chat.locked;
+        setChatLocked(chat, chat.locked);
+        checkbox.disabled = chat.locked;
+        if (chat.locked) checkbox.checked = false;
+        lock.textContent = chat.locked ? '🔒 Unlock' : '🔓 Lock';
+        lock.setAttribute('aria-label', `${chat.locked ? 'Unlock' : 'Lock'} ${chat.title}`);
+        lock.setAttribute('aria-pressed', String(chat.locked));
+        const pill = info.querySelector('.vc-pill');
+        pill.textContent = chat.locked ? 'Locked' : chat.protectedMatches.length ? 'Protected' : chat.likelyPersonal ? 'Suggested' : 'Review';
+        pill.className = `vc-pill ${chat.locked || chat.protectedMatches.length ? 'vc-pill-protected' : chat.likelyPersonal ? 'vc-pill-personal' : 'vc-pill-review'}`;
+        refreshSelection();
+      };
+      row.append(lock);
       list.appendChild(row);
       rows.push({ chat, checkbox, row });
     }
@@ -1483,7 +1693,7 @@
 
       const head = document.createElement('div');
       head.className = 'vc-selection-head';
-      head.innerHTML = '<div><div class="vc-selection-title">Selected chats</div><div class="vc-selection-text">Only chats currently selected for deletion are shown here. Uncheck anything you want to keep.</div></div>';
+      head.innerHTML = '<div><div class="vc-selection-title">Selected chats</div><div class="vc-selection-text">These chats will be included in the action you choose below. Uncheck anything you want to keep.</div></div>';
       selectionReview.appendChild(head);
 
       const selectedRows = [...rows.filter(item => item.checkbox.checked)].sort((a, b) =>
@@ -1570,14 +1780,14 @@
 
     const selectSuggested = button('Select suggested chats', 'secondary');
     selectSuggested.onclick = () => {
-      rows.forEach(item => { item.checkbox.checked = !item.deleted && item.chat.likelyPersonal; });
+      rows.forEach(item => { item.checkbox.checked = !item.removed && !item.chat.locked && item.chat.likelyPersonal; });
       refreshSelection();
       if (rows.some(item => item.checkbox.checked)) showSelectedReview();
     };
 
     const selectAll = button('Select shown', 'secondary');
     selectAll.onclick = () => {
-      rows.forEach(item => { if (!item.row.hidden && !item.deleted) item.checkbox.checked = true; });
+      rows.forEach(item => { if (!item.row.hidden && !item.removed && !item.chat.locked) item.checkbox.checked = true; });
       refreshSelection();
     };
 
@@ -1760,7 +1970,7 @@
       const range = parseNumberRange(fromNumber.value, toNumber.value, chats.length);
       if (!range) return;
       rows.forEach(item => {
-        item.checkbox.checked = !item.deleted && chatMatchesNumberRange(item.chat, range);
+        item.checkbox.checked = !item.removed && chatMatchesNumberRange(item.chat, range);
       });
       refreshSelection();
       if (selectionMode) renderSelectedReview();
@@ -1768,7 +1978,7 @@
     const numberHint = document.createElement('div');
     numberHint.className = 'vc-subtitle';
     numberHint.style.cssText = 'grid-column:1/-1;max-width:none';
-    numberHint.textContent = 'Sorting keeps chat numbers unchanged. Number ranges skip protected chats.';
+    numberHint.textContent = 'Numbers stay the same when sorting. Ranges skip protected and locked chats.';
     numberHint.title = 'Chat #1 is at the oldest end of sidebar order. Refreshing history can change numbers.';
     const fromField = document.createElement('label');
     fromField.className = 'vc-field';
@@ -1802,7 +2012,7 @@
     toolbarActions.append(selectionActions, historyActions);
     toolbar.append(summary, toolbarActions);
     const sortBar = document.createElement('div');
-    sortBar.className = 'vc-toolbar';
+    sortBar.className = 'vc-field';
     const sortLabel = document.createElement('label');
     sortLabel.textContent = 'Organize chats';
     sortLabel.htmlFor = 'vc-chat-sort';
@@ -1819,13 +2029,24 @@
     sortSelect.onchange = () => {
       sortOrder = sortSelect.value === 'oldest' ? 'oldest' : 'newest';
       GM_setValue(CHAT_SORT_KEY, sortOrder);
+      GM_setValue(SETTINGS_KEY, JSON.stringify({ ...loadSettings(), sort: sortOrder }));
       const orderedRows = [...rows].sort((a, b) => sortOrder === 'oldest' ? a.chat.chatNumber - b.chat.chatNumber : b.chat.chatNumber - a.chat.chatNumber);
       for (const item of orderedRows) list.append(item.row);
       if (selectionMode) renderSelectedReview();
     };
     sortBar.append(sortLabel, sortSelect);
-    panel.append(sortBar);
-    panel.append(numberControls);
+    viewControls.append(sortBar);
+    const coverage = document.createElement('div');
+    coverage.className = 'vc-coverage vc-subtitle';
+    coverage.style.cssText = 'padding:8px 20px;flex-shrink:0';
+    coverage.textContent = historyCoverage(chats.length);
+    panel.append(coverage);
+    const rangeSection = document.createElement('details');
+    rangeSection.className = 'vc-range';
+    const rangeLabel = document.createElement('summary');
+    rangeLabel.textContent = 'Select a number range';
+    rangeSection.append(rangeLabel, numberControls);
+    panel.append(rangeSection);
     panel.append(toolbar, viewControls, listWrap, filterManager, selectionReview);
 
     footer = document.createElement('div');
@@ -1834,10 +2055,21 @@
     const status = document.createElement('div');
     status.className = 'vc-status';
     status.setAttribute('role', 'status');
-    status.textContent = 'Nothing is deleted until you confirm.';
+    status.textContent = 'Choose Archive to keep chats recoverable, or Delete to remove them permanently.';
 
     const footerActions = document.createElement('div');
     footerActions.className = 'vc-footer-actions';
+    const cleanupField = document.createElement('label');
+    cleanupField.className = 'vc-field';
+    cleanupField.textContent = 'Selected chat action';
+    const cleanupAction = document.createElement('select');
+    cleanupAction.className = 'vc-input';
+    cleanupAction.setAttribute('aria-label', 'Selected chat action');
+    for (const [value, text] of [['archive', 'Archive'], ['delete', 'Delete permanently']]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = text; cleanupAction.append(option);
+    }
+    cleanupAction.onchange = refreshSelection;
+    cleanupField.append(cleanupAction);
 
     const close = button('Cancel', 'secondary');
     close.onclick = () => overlay.remove();
@@ -1864,16 +2096,18 @@
     statusBlock.append(status, progress, failureList);
 
     remove = button('Delete selected', 'danger');
-    async function deleteSelection(selected) {
+    async function cleanupSelection(selected, kind = cleanupAction.value) {
       if (running) return;
-      selected = selected.filter(item => !item.deleted);
+      selected = selected.filter(item => !item.removed && !isChatLocked(item.chat));
       if (!selected.length) {
         status.dataset.state = 'error';
         status.textContent = 'Nothing selected.';
         return;
       }
 
-      const confirmed = confirm(`Delete ${selected.length} selected ${current} chat(s)?\n\nThis cannot be undone.`);
+      const verb = kind === 'archive' ? 'Archive' : 'Delete';
+      const completedVerb = kind === 'archive' ? 'archived' : 'deleted';
+      const confirmed = confirm(`${verb} ${selected.length} selected ${current} chat(s)?\n\n${kind === 'archive' ? 'Archived chats are kept rather than permanently deleted.' : 'This cannot be undone.'}`);
       if (!confirmed) return;
 
       running = true;
@@ -1891,16 +2125,18 @@
       for (const control of controls) control.disabled = true;
       status.dataset.state = '';
       const result = await runChatBatch(selected, async item => {
-        await deleteChat(item.chat);
+        await (kind === 'archive' ? archiveChat(item.chat) : deleteChat(item.chat));
         forgetChat(item.chat.href);
-        item.deleted = true;
+        item.removed = true;
         item.checkbox.checked = false;
       }, () => stopRequested, (index, total, item) => {
         progress.value = index;
-        status.textContent = `${index} of ${total} processed · Deleting ${item.chat.title}`;
+        status.textContent = `${index} of ${total} processed · ${kind === 'archive' ? 'Archiving' : 'Deleting'} ${item.chat.title}`;
       });
       progress.value = result.completed.length + result.failed.length;
       failedItems = result.failed.map(failure => failure.item);
+      failedKind = kind;
+      retry.textContent = kind === 'archive' ? 'Retry failed archives' : 'Retry failed deletions';
       failureList.replaceChildren();
       for (const failure of result.failed) {
         failure.item.row.style.borderColor = 'var(--vc-danger)';
@@ -1910,7 +2146,7 @@
       }
       failureList.hidden = !result.failed.length;
       retry.hidden = !result.failed.length;
-      const counts = `${result.completed.length} deleted · ${result.failed.length} failed · ${result.pending.length} remaining`;
+      const counts = `${result.completed.length} ${completedVerb} · ${result.failed.length} failed · ${result.pending.length} remaining`;
       if (result.failed.length) {
         status.dataset.state = 'error';
         status.textContent = counts;
@@ -1927,16 +2163,28 @@
       refreshSelection();
       if (selectionMode) renderSelectedReview();
     }
-    remove.onclick = () => deleteSelection(rows.filter(item => item.checkbox.checked));
-    retry.onclick = () => deleteSelection(failedItems.filter(item => item.checkbox.checked));
+    remove.onclick = () => cleanupSelection(rows.filter(item => item.checkbox.checked));
+    retry.onclick = () => cleanupSelection(failedItems.filter(item => item.checkbox.checked), failedKind);
 
-    footerActions.append(stop, retry, close, remove);
+    footerActions.append(cleanupField, stop, retry, close, remove);
     footer.append(statusBlock, footerActions);
     panel.appendChild(footer);
 
     overlay.appendChild(panel);
     overlay.addEventListener('click', event => {
       if (event.target === overlay && !running) overlay.remove();
+    });
+    overlay.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !running) {
+        overlay.remove();
+        document.getElementById(APP_ID + '-launcher')?.focus();
+      }
+      if (event.key === 'Tab') {
+        const controls = [...panel.querySelectorAll('button,input,select,summary')].filter(element => !element.disabled && visible(element));
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
     });
 
     document.body.appendChild(overlay);
@@ -1945,6 +2193,7 @@
     }
     updateBackLabel();
     refreshSelection();
+    backIcon.focus();
   }
 
   function button(text, variant = 'secondary') {
@@ -2056,6 +2305,7 @@
 
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
+        checkbox.disabled = isChatLocked(chat);
         checkbox.checked = selected.has(chat.href);
         checkbox.onchange = () => {
           if (checkbox.checked) selected.add(chat.href);
@@ -2065,7 +2315,7 @@
         };
 
         const title = document.createElement("span");
-        title.textContent = chat.title;
+        title.textContent = `${isChatLocked(chat) ? '🔒 Locked · ' : ''}${chat.title}`;
 
         row.classList.toggle("acus-selected", checkbox.checked);
         row.append(checkbox, title);
@@ -2086,7 +2336,7 @@
 
     search.oninput = render;
     selectVisible.onclick = () => {
-      for (const chat of matchingChats()) selected.add(chat.href);
+      for (const chat of matchingChats()) if (!isChatLocked(chat)) selected.add(chat.href);
       render();
       refreshControls();
     };
@@ -2098,7 +2348,7 @@
     };
 
     submit.onclick = async () => {
-      const chosen = chats.filter(chat => selected.has(chat.href));
+      const chosen = chats.filter(chat => selected.has(chat.href) && !isChatLocked(chat));
       if (!chosen.length) return;
 
       const confirmed = confirm(`Archive ${chosen.length} selected ${platform()} chat${chosen.length === 1 ? "" : "s"}?`);
@@ -2157,7 +2407,7 @@
     if (document.getElementById('vanick-cleaner-overlay')?.dataset.running === 'true') return;
     const box = document.createElement("div");
     box.className = "acus-menu";
-    [["🔎 Search Chats", searchChats, 'Find conversations by title'], ["📦 Bulk Archive", bulkArchive, 'Move selected chats out of your sidebar'], ["🧹 Chat Cleaner", () => chatCleaner(false), 'Select numbered chats and review before deleting'], ["📚 Prompt Library", promptLibrary, 'Save, reuse, and back up your prompts']].forEach(([label, fn, description]) => {
+    [["🔎 Search Chats", searchChats, 'Find conversations by title'], ["📦 Bulk Archive", bulkArchive, 'Move selected chats out of your sidebar'], ["🧹 Chat Cleaner", () => chatCleaner(false), 'Search, lock, archive, or delete selected chats'], ["📚 Prompt Library", promptLibrary, 'Save favorites and fill reusable prompt templates'], ['⚙ Settings', settingsScreen, 'Choose appearance, text size, and cleaner defaults']].forEach(([label, fn, description]) => {
       const b = document.createElement("button");
       b.className = "acus-menu-btn";
       const name = document.createElement('strong');
@@ -2218,6 +2468,25 @@
       #${APP_ID}-launcher{background:#1d4ed8;border-color:#60a5fa;color:white;min-height:44px;font-size:14px;padding:10px 17px}
       #${APP_ID}-launcher:hover{background:#1e40af;border-color:#bfdbfe}
       @media(max-width:640px){.acus-backdrop{padding:10px}.acus-modal{max-height:92vh}.acus-library-tools,.acus-archive-footer{flex-wrap:wrap}.acus-archive-progress{width:100%}}
+      .acus-modal{background:var(--acus-panel);color:var(--acus-text);border-color:var(--acus-borderStrong)}
+      .acus-head{background:var(--acus-surface);border-color:var(--acus-borderStrong)}
+      .acus-modal button{background:var(--acus-surface);color:var(--acus-text);border-color:var(--acus-borderStrong)}
+      .acus-modal button:hover:not(:disabled){background:var(--acus-surfaceHover);border-color:var(--acus-accent)}
+      .acus-modal .acus-input{background:var(--acus-panel);color:var(--acus-text);border-color:var(--acus-borderStrong);font:inherit;min-height:44px}
+      .acus-modal .acus-input::placeholder{color:var(--acus-muted)}
+      .acus-modal .acus-muted,.acus-modal .acus-status,.acus-modal .acus-library-status,.acus-modal .acus-menu-btn span,.acus-modal .acus-archive-count,.acus-modal .acus-archive-progress{color:var(--acus-muted)}
+      .acus-modal .acus-error{color:var(--acus-text);font-weight:700}
+      .acus-modal .acus-primary,.acus-modal .acus-archive-submit:not(:disabled){background:var(--acus-accent);color:#fff;border-color:var(--acus-accent)}
+      .acus-modal .acus-field{display:grid;gap:7px;font-weight:650;margin:12px 0}
+      .acus-modal .acus-field .acus-input{margin:0;font-weight:400}
+      .acus-modal .acus-check{display:flex;gap:9px;align-items:center;margin:12px 0}
+      .acus-modal .acus-check input{width:20px;height:20px;accent-color:var(--acus-accent)}
+      .acus-modal .acus-prompt-actions{flex-wrap:wrap;margin-top:14px;align-items:center}
+      .acus-modal .acus-prompt{border-color:var(--acus-borderStrong);padding:18px 0}
+      .acus-modal .acus-template-value{min-height:68px}
+      .acus-modal .acus-row{color:var(--acus-text)}
+      .acus-modal .acus-row:hover,.acus-modal .acus-archive-row:hover,.acus-modal .acus-archive-row.acus-selected{background:var(--acus-surfaceHover)}
+      .acus-modal[data-text-size="large"],.acus-modal[data-text-size="large"] button,.acus-modal[data-text-size="large"] .acus-input,.acus-modal[data-text-size="large"] .acus-menu-btn span{font-size:16px}
     `;
     document.head.append(style);
 

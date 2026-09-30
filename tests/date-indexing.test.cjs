@@ -10,9 +10,67 @@ const context = vm.createContext({
   document: {}, console,
 });
 vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) +
-  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains }; })();', context);
+  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat }; })();', context);
 const h = context.helpers;
 const day = value => h.parseDateInput(value);
+
+test('templates deduplicate field names and substitute multiline values literally', () => {
+  const text = 'Explain {{ topic }} at {{level}}. Repeat {{topic}}.';
+  assert.equal(h.templateFields(text).join(','), 'topic,level');
+  assert.equal(h.fillTemplate(text, { topic: 'Line one\n$& <tag>', level: 'beginner' }), 'Explain Line one\n$& <tag> at beginner. Repeat Line one\n$& <tag>.');
+  assert.equal(h.fillTemplate('{{missing}}', {}), '{{missing}}');
+});
+
+test('legacy prompts remain usable and pack metadata survives normalization', () => {
+  const legacy = h.normalizePrompts([{ name: 'Old', text: 'Plain prompt' }])[0];
+  assert.equal(legacy.text, 'Plain prompt');
+  assert.equal(legacy.folder, '');
+  assert.equal(legacy.favorite, false);
+  const packed = h.normalizePrompts([{ name: 'Template', text: '{{topic}}', folder: 'Work', favorite: true, defaults: { topic: 'Testing', removed: 'discard' } }])[0];
+  const restored = h.normalizePrompts(JSON.parse(JSON.stringify([packed])))[0];
+  assert.equal(restored.folder, 'Work');
+  assert.equal(restored.favorite, true);
+  assert.equal(restored.defaults.topic, 'Testing');
+  assert.equal(Object.hasOwn(restored.defaults, 'removed'), false);
+});
+
+test('template fields with object property names stay ordinary text values', () => {
+  const values = Object.fromEntries([['__proto__', 'value'], ['constructor', 'other']]);
+  assert.equal(h.fillTemplate('{{__proto__}} {{constructor}}', values), 'value other');
+  const prompt = h.normalizePrompts([{ name: 'Safe', text: '{{__proto__}}', defaults: values }])[0];
+  assert.equal(Object.hasOwn(prompt.defaults, '__proto__'), true);
+  assert.equal(prompt.defaults.__proto__, 'value');
+});
+
+test('settings validate imported storage and retain sensible defaults', () => {
+  const settings = h.normalizeSettings({ theme: 'invalid', textSize: 'huge', sort: 'oldest', cleanerView: 'selected' });
+  assert.equal(settings.theme, 'auto');
+  assert.equal(settings.textSize, 'standard');
+  assert.equal(settings.sort, 'oldest');
+  assert.equal(settings.cleanerView, 'all');
+});
+
+test('chat locks persist per client and exclude numeric and suggested selections', async () => {
+  const values = new Map();
+  const previousGet = context.GM_getValue;
+  context.GM_getValue = (key, fallback) => values.get(key) ?? fallback;
+  context.GM_setValue = (key, value) => values.set(key, value);
+  const chat = { href: '/c/one', title: 'Work', chatNumber: 1, likelyPersonal: true, locked: true };
+  h.setChatLocked(chat, true);
+  assert.equal(h.isChatLocked(chat), true);
+  await assert.rejects(h.archiveChat(chat), /locked/);
+  await assert.rejects(h.deleteChat(chat), /locked/);
+  assert.equal(h.chatMatchesNumberRange(chat, { start: 1, end: 2 }), false);
+  assert.equal(h.chatMatchesView(chat, false, '', 'suggested'), false);
+  assert.equal(h.chatMatchesView(chat, false, '', 'unprotected'), false);
+  context.location.hostname = 'claude.ai';
+  assert.equal(h.isChatLocked(chat), false);
+  context.location.hostname = 'chatgpt.com';
+  h.setChatLocked(chat, false);
+  assert.equal(h.isChatLocked(chat), false);
+  context.GM_getValue = previousGet;
+  delete context.GM_setValue;
+});
 
 test('native action discovery excludes both suite overlays', () => {
   const modalButton = {};

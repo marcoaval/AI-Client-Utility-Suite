@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.0
+
+### Added
+- Fillable Prompt Library templates using `{{field name}}`, with multiline values, repeated fields, a finished preview, and saved defaults.
+- Prompt folders, favorites, name and content search, and prompt editing. Library and folder exports include template defaults and organization metadata; existing prompt backups remain supported.
+- Individual chat locks saved separately for each client. Locked chats cannot be selected, archived, or deleted by the suite until unlocked.
+- Archive selected chats directly from Chat Cleaner, with confirmation, progress, cancellation between chats, and retries that preserve the original action.
+- Settings for light, dark, or page appearance, larger text, default chat order, and the initial cleaner view.
+- History coverage showing indexed chat count and the last sidebar scan, including when the scan may be incomplete.
+
+### Improved
+- Cleaner sorting sits beside search, and number ranges expand when needed to leave more space for conversations.
+- Form fields have persistent labels, library actions have clearer wording, and each new screen has a back arrow.
+- Dialogs keep keyboard focus within their controls and support Escape to close when cleanup is idle.
+- Existing plain prompts and shared Tampermonkey storage continue working after the update.
+
+### Community
+- Thanks to @sam-cre for Prompt Library spacing and backup feedback in issues #2 and #3 and chat organization feedback in issue #5. Those suggestions informed the updated library, exports, and cleaner layout.
+
 ## 0.6.0
 
 ### Added
