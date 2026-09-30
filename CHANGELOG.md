@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.3
+
+### Added
+- ChatGPT Search-assisted indexing from AI Tools and Chat Cleaner. Search and scroll in the native Search chats dialog to cache exposed conversations and dates.
+- Indexing progress and a Finish indexing control; closing Search also saves the collected results and stops indexing.
+
+### Fixed
+- Saved calendar ranges for new date-group observations so cached relative dates do not change as time passes.
+- Preserve exact dates when subsequent sidebar observations expose only broad date groups.
+- Select date ranges only when a chat's entire known date range fits, preventing a narrow range from selecting an entire month group.
+
+### Limitations
+- Search coverage and dates depend on the results and date metadata exposed by ChatGPT's interface. Unknown dates remain unknown. Claude retains sidebar indexing.
+
 ## 0.5.2
 
 ### Fixed

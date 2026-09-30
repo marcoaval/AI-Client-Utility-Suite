@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.5.2
+// @version      0.5.3
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -36,6 +36,7 @@
   };
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   let cachedHistory = null;
+  let stopSearchIndexing = null;
 
   const platform = () => location.hostname.includes("claude.ai") ? "Claude" : "ChatGPT";
 
@@ -198,11 +199,11 @@
     return [...document.querySelectorAll(selector)];
   }
 
-  function inferChatDateLabel(link) {
+  function inferChatDateLabel(link, boundary = document.body) {
     const datePattern = /^(today|yesterday|previous 7 days|previous 30 days|last 7 days|last 30 days|this week|last week|january|february|march|april|may|june|july|august|september|october|november|december|\d{4}|[a-z]+ \d{4})$/i;
 
     let node = link;
-    for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+    for (let depth = 0; node && node !== boundary && depth < 8; depth++, node = node.parentElement) {
       let sibling = node.previousElementSibling;
       let checked = 0;
 
@@ -226,15 +227,18 @@
     return "Unknown date";
   }
 
-  function getChatLinks() {
+  function getChatLinks(root = document) {
     const seen = new Set();
     const chats = [];
 
-    for (const link of chatLinkElements()) {
+    const selector = platform() === "Claude" ? 'a[href^="/chat/"]' : 'a[href^="/c/"]';
+    for (const link of root.querySelectorAll(selector)) {
       const href = link.getAttribute("href") || "";
       if (!href || seen.has(href)) continue;
 
+      const titleNode = link.querySelector('[data-testid="conversation-title"], h3, h4');
       const title = (
+        titleNode?.textContent ||
         link.getAttribute("aria-label") ||
         link.getAttribute("title") ||
         link.innerText ||
@@ -244,7 +248,17 @@
 
       if (!title) continue;
       seen.add(href);
-      chats.push({ href, url: link.href, title, dateLabel: inferChatDateLabel(link) });
+      const boundary = root === document ? document.body : root;
+      const parentRow = link.parentElement;
+      const row = link.closest('[role="option"], li') ||
+        (parentRow && parentRow !== boundary && parentRow.querySelectorAll(selector).length === 1 ? parentRow : link);
+      const time = row.querySelector('time[datetime]');
+      const exactDay = parseExposedDate(time?.getAttribute('datetime'));
+      const dateLabel = exactDay ? localDateKey(exactDay) : inferChatDateLabel(link, boundary);
+      const range = exactDay ? { start: exactDay, end: exactDay } : parseSidebarDateRange(dateLabel);
+      chats.push({ href, url: link.href, title, dateLabel,
+        ...(range ? { dateStart: localDateKey(range.start), dateEnd: localDateKey(range.end) } : {})
+      });
     }
 
     return chats;
@@ -261,9 +275,12 @@
       target.set(chat.href, {
         ...existing,
         ...chat,
+        // A coarse or unknown sidebar group must not replace an exact Search date.
         dateLabel: chat.dateLabel && chat.dateLabel !== "Unknown date"
           ? chat.dateLabel
-          : (existing.dateLabel || "Unknown date")
+          : (existing.dateLabel || "Unknown date"),
+        ...(existing.dateStart && existing.dateStart === existing.dateEnd && chat.dateStart !== chat.dateEnd
+          ? { dateStart: existing.dateStart, dateEnd: existing.dateEnd, dateLabel: existing.dateLabel } : {})
       });
     }
   }
@@ -391,6 +408,78 @@
     mergeChats(cachedHistory, chats);
     savePersistentChatCache();
     return [...cachedHistory.values()];
+  }
+
+  function nativeSearchDialog() {
+    return [...document.querySelectorAll('[role="dialog"]')].find(dialog =>
+      !dialog.closest('.acus-backdrop, #vanick-cleaner-overlay') &&
+      [...dialog.querySelectorAll('input')].some(input =>
+        /search/i.test(`${input.placeholder} ${input.getAttribute('aria-label') || ''}`))
+    ) || null;
+  }
+
+  async function indexWithChatGPTSearch() {
+    if (platform() !== "ChatGPT") return;
+    stopSearchIndexing?.();
+    document.getElementById(APP_ID + "-modal")?.remove();
+    document.getElementById('vanick-cleaner-overlay')?.remove();
+
+    let dialog = nativeSearchDialog();
+    if (!dialog) {
+      const search = [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
+        visible(element) && !element.closest('.acus-backdrop, #vanick-cleaner-overlay') &&
+        /^(search chats|search)(?:\s|$)/i.test(elementText(element))
+      );
+      if (!search) {
+        alert('Open ChatGPT’s Search chats, then choose Index with ChatGPT Search again.');
+        return;
+      }
+      search.click();
+      for (let attempt = 0; attempt < 20 && !dialog; attempt++) {
+        await sleep(100);
+        dialog = nativeSearchDialog();
+      }
+    }
+    if (!dialog) {
+      alert('Search chats was not detected. Sidebar indexing remains available.');
+      return;
+    }
+
+    const bar = document.createElement('div');
+    bar.id = APP_ID + '-search-index';
+    bar.style.cssText = 'position:fixed;bottom:16px;left:16px;right:16px;z-index:2147483647;padding:12px;background:#181818;color:#fff;border:1px solid #777;border-radius:12px;font:14px system-ui;display:flex;gap:12px;align-items:center';
+    const status = document.createElement('span');
+    status.style.flex = '1';
+    const done = document.createElement('button');
+    done.textContent = 'Finish indexing';
+    bar.append(status, done);
+    document.body.append(bar);
+    const collected = new Map();
+    let timer;
+    const capture = () => {
+      mergeChats(collected, getChatLinks(dialog));
+      rememberChats([...collected.values()]);
+      status.textContent = `${collected.size} Search chats indexed. Search and scroll to load more results; only exposed dates are saved. Close Search, then open Chat Cleaner to review.`;
+    };
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(capture, 180);
+    });
+    observer.observe(dialog, { childList: true, subtree: true, attributes: true, characterData: true });
+    const lifecycle = new MutationObserver(() => {
+      if (!dialog.isConnected) stopSearchIndexing?.();
+    });
+    lifecycle.observe(document.body, { childList: true, subtree: true });
+    stopSearchIndexing = () => {
+      clearTimeout(timer);
+      observer.disconnect();
+      lifecycle.disconnect();
+      capture();
+      bar.remove();
+      stopSearchIndexing = null;
+    };
+    done.onclick = () => stopSearchIndexing?.();
+    capture();
   }
 
   function forgetChat(href) {
@@ -980,6 +1069,8 @@
     const value = String(label || "").trim().toLowerCase();
     const today = startOfDay(new Date());
     const currentYear = today.getFullYear();
+    const exactDay = parseExposedDate(value);
+    if (exactDay) return { start: exactDay, end: exactDay };
 
     if (value === "today") return { start: today, end: today };
     if (value === "yesterday") {
@@ -1034,17 +1125,36 @@
     if (!value) return null;
     const parts = value.split("-").map(Number);
     if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
-    return new Date(parts[0], parts[1] - 1, parts[2]);
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
+    return date.getFullYear() === parts[0] && date.getMonth() === parts[1] - 1 && date.getDate() === parts[2] ? date : null;
+  }
+
+  function localDateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function parseExposedDate(value) {
+    if (!value || !/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(value)) return null;
+    if (!parseDateInput(value.slice(0, 10))) return null;
+    if (value.length === 10) return parseDateInput(value);
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : startOfDay(date);
+  }
+
+  function chatDateRange(chat) {
+    const start = parseExposedDate(chat.dateStart);
+    const end = parseExposedDate(chat.dateEnd);
+    return start && end && start <= end ? { start, end } : parseSidebarDateRange(chat.dateLabel);
   }
 
   function chatMatchesDateRange(chat, startDate, endDate) {
-    const range = parseSidebarDateRange(chat.dateLabel);
+    const range = chatDateRange(chat);
     if (!range) return false;
-    return range.end >= startDate && range.start <= endDate;
+    return range.start >= startDate && range.end <= endDate;
   }
 
   function chatIsBeforeDate(chat, cutoff) {
-    const range = parseSidebarDateRange(chat.dateLabel);
+    const range = chatDateRange(chat);
     if (!range) return false;
     return range.end <= cutoff;
   }
@@ -1248,7 +1358,10 @@
       if (chat.matches.length) detailParts.push(`Matched: ${chat.matches.join(', ')}`);
       else detailParts.push('No suggested cleanup filter match');
       if (chat.protectedMatches.length) detailParts.push(`Protected: ${chat.protectedMatches.join(', ')}`);
-      detailParts.push(`Date: ${chat.dateLabel || 'Unknown date'}`);
+      const savedDate = chat.dateStart && chat.dateEnd
+        ? (chat.dateStart === chat.dateEnd ? chat.dateStart : `${chat.dateStart} to ${chat.dateEnd}`)
+        : (chat.dateLabel || 'Unknown date');
+      detailParts.push(`Date: ${savedDate}`);
 
       const statusClass = chat.protectedMatches.length ? 'vc-pill-protected' : chat.likelyPersonal ? 'vc-pill-personal' : 'vc-pill-review';
       const statusText = chat.protectedMatches.length ? 'Protected' : chat.likelyPersonal ? 'Suggested' : 'Review';
@@ -1575,6 +1688,11 @@
 
     dateControls.append(fromDate, toDate, selectRange, beforeDate, selectBefore);
     toolbarActions.append(manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, refreshHistory);
+    if (platform() === 'ChatGPT') {
+      const indexSearch = button('Index with ChatGPT Search', 'secondary');
+      indexSearch.onclick = indexWithChatGPTSearch;
+      toolbarActions.append(indexSearch);
+    }
     toolbar.append(summary, toolbarActions);
     panel.append(dateControls);
     panel.append(toolbar, listWrap, filterManager, selectionReview);
@@ -1868,6 +1986,13 @@
       b.onclick = fn;
       box.append(b);
     });
+    if (platform() === 'ChatGPT') {
+      const indexSearch = document.createElement('button');
+      indexSearch.className = 'acus-menu-btn';
+      indexSearch.textContent = '🔎 Index with ChatGPT Search';
+      indexSearch.onclick = indexWithChatGPTSearch;
+      box.append(indexSearch);
+    }
     modal("AI Tools · " + platform(), box);
   }
 

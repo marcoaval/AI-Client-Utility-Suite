@@ -10,6 +10,11 @@ Search across the full chat history by automatically loading older sidebar entri
 ### Chat Cleaner
 Review the full chat history, use suggested and protected title filters, manually select conversations, and delete selected chats only after confirmation.
 
+### ChatGPT Search-assisted indexing
+Choose **Index with ChatGPT Search** in AI Tools or Chat Cleaner. The suite opens ChatGPT's native **Search chats** and caches conversation links as results load. Enter your own searches and scroll through the results to index more chats. Choose **Finish indexing**, close Search, and reopen Chat Cleaner to review the cached chats.
+
+This supplements the sidebar scan; a search only covers the results ChatGPT exposes, not necessarily your entire history. Dates are saved when a result exposes a `time` element or a sidebar date group. Missing dates remain **Unknown date**. Relative date groups are saved as calendar ranges when indexed so their dates do not drift as the cache ages. Date selection includes a grouped chat only when its whole known range fits inside the chosen range. Previously cached relative groups can be rebuilt with **Refresh history**.
+
 ### Prompt Library
 Save reusable prompts in Tampermonkey storage so the same library is available on both ChatGPT and Claude. Prompts can also be exported to and imported from a JSON backup.
 
@@ -44,9 +49,13 @@ Your saved Prompt Library data and cleaner filter settings are stored separately
 - ChatGPT
 - Claude
 
+## Development checks
+
+Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-indexing.test.cjs` with Node.js to check syntax and date/cache regression cases.
+
 ## Project status
 
-Early development. Version 0.4.2 combines full-history search, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
+Early development. Version 0.5.3 combines sidebar search, ChatGPT Search-assisted indexing, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
 
 ## Privacy
 
