@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.5.1
+// @version      0.5.2
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -303,48 +303,85 @@
     const collected = new Map();
     mergeChats(collected, getChatLinks());
 
-    const containers = scrollContainersForChats();
+    let containers = scrollContainersForChats();
     if (!containers.length) {
       onProgress?.(collected.size, false);
       return [...collected.values()];
     }
 
     for (const container of containers) {
-      const step = Math.max(220, Math.floor(container.clientHeight * 0.8));
-      let stableAtBottom = 0;
-      let lastCount = collected.size;
-      let lastMax = Math.max(0, container.scrollHeight - container.clientHeight);
+      container.scrollTop = 0;
+      container.dispatchEvent(new Event("scroll", { bubbles: true }));
+    }
 
-      while (stableAtBottom < 6) {
-        const max = Math.max(0, container.scrollHeight - container.clientHeight);
-        container.scrollTop = Math.min(container.scrollTop + step, max);
-        await sleep(220);
+    await sleep(180);
+    mergeChats(collected, getChatLinks());
 
+    let stablePasses = 0;
+    let lastCount = collected.size;
+    let lastHeight = 0;
+    let safety = 0;
+
+    while (stablePasses < 10 && safety < 500) {
+      safety++;
+      containers = scrollContainersForChats();
+      const container = containers[0];
+      if (!container) break;
+
+      const max = Math.max(0, container.scrollHeight - container.clientHeight);
+      const step = Math.max(220, Math.floor(container.clientHeight * 0.72));
+      const next = Math.min(container.scrollTop + step, max);
+
+      container.scrollTop = next;
+      container.dispatchEvent(new Event("scroll", { bubbles: true }));
+      await sleep(250);
+
+      mergeChats(collected, getChatLinks());
+      onProgress?.(collected.size, true);
+
+      const refreshedContainers = scrollContainersForChats();
+      const refreshed = refreshedContainers[0] || container;
+      const refreshedMax = Math.max(0, refreshed.scrollHeight - refreshed.clientHeight);
+      const atBottom = refreshed.scrollTop >= refreshedMax - 6;
+      const height = refreshed.scrollHeight;
+      const grew = collected.size > lastCount || height > lastHeight + 4;
+
+      if (atBottom) {
+        refreshed.scrollTop = refreshedMax;
+        refreshed.dispatchEvent(new Event("scroll", { bubbles: true }));
+        await sleep(420);
         mergeChats(collected, getChatLinks());
-        onProgress?.(collected.size, true);
 
-        const currentMax = Math.max(0, container.scrollHeight - container.clientHeight);
-        const atBottom = container.scrollTop >= currentMax - 4;
-        const grew = collected.size > lastCount || currentMax > lastMax + 4;
+        const afterWaitContainers = scrollContainersForChats();
+        const afterWait = afterWaitContainers[0] || refreshed;
+        const afterHeight = afterWait.scrollHeight;
+        const afterMax = Math.max(0, afterHeight - afterWait.clientHeight);
+        const grewAfterWait = collected.size > lastCount || afterHeight > height + 4;
 
-        if (atBottom && !grew) {
-          stableAtBottom++;
-          await sleep(300);
-          mergeChats(collected, getChatLinks());
+        if (grew || grewAfterWait) {
+          stablePasses = 0;
+        } else if (afterWait.scrollTop >= afterMax - 6) {
+          stablePasses++;
         } else {
-          stableAtBottom = 0;
+          stablePasses = 0;
         }
 
-        lastCount = collected.size;
-        lastMax = currentMax;
+        lastHeight = afterHeight;
+      } else {
+        stablePasses = 0;
+        lastHeight = height;
       }
+
+      lastCount = collected.size;
     }
 
-    for (const container of containers) {
+    for (const container of scrollContainersForChats()) {
       container.scrollTop = 0;
+      container.dispatchEvent(new Event("scroll", { bubbles: true }));
     }
 
-    await sleep(120);
+    await sleep(150);
+    mergeChats(collected, getChatLinks());
     onProgress?.(collected.size, false);
     return [...collected.values()];
   }
@@ -929,6 +966,89 @@
     };
   }
 
+  function startOfDay(date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+
+  function addDays(date, days) {
+    const next = new Date(date);
+    next.setDate(next.getDate() + days);
+    return next;
+  }
+
+  function parseSidebarDateRange(label) {
+    const value = String(label || "").trim().toLowerCase();
+    const today = startOfDay(new Date());
+    const currentYear = today.getFullYear();
+
+    if (value === "today") return { start: today, end: today };
+    if (value === "yesterday") {
+      const day = addDays(today, -1);
+      return { start: day, end: day };
+    }
+    if (value === "previous 7 days" || value === "last 7 days") {
+      return { start: addDays(today, -7), end: addDays(today, -2) };
+    }
+    if (value === "previous 30 days" || value === "last 30 days") {
+      return { start: addDays(today, -30), end: addDays(today, -8) };
+    }
+    if (value === "this week") {
+      const start = addDays(today, -today.getDay());
+      return { start, end: today };
+    }
+    if (value === "last week") {
+      const thisWeek = addDays(today, -today.getDay());
+      return { start: addDays(thisWeek, -7), end: addDays(thisWeek, -1) };
+    }
+
+    const months = [
+      "january","february","march","april","may","june",
+      "july","august","september","october","november","december"
+    ];
+
+    const monthMatch = value.match(/^([a-z]+)(?:\s+(\d{4}))?$/);
+    if (monthMatch && months.includes(monthMatch[1])) {
+      const month = months.indexOf(monthMatch[1]);
+      let year = monthMatch[2] ? Number(monthMatch[2]) : currentYear;
+
+      if (!monthMatch[2] && month > today.getMonth()) year--;
+
+      return {
+        start: new Date(year, month, 1),
+        end: new Date(year, month + 1, 0)
+      };
+    }
+
+    if (/^\d{4}$/.test(value)) {
+      const year = Number(value);
+      return {
+        start: new Date(year, 0, 1),
+        end: new Date(year, 11, 31)
+      };
+    }
+
+    return null;
+  }
+
+  function parseDateInput(value) {
+    if (!value) return null;
+    const parts = value.split("-").map(Number);
+    if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+
+  function chatMatchesDateRange(chat, startDate, endDate) {
+    const range = parseSidebarDateRange(chat.dateLabel);
+    if (!range) return false;
+    return range.end >= startDate && range.start <= endDate;
+  }
+
+  function chatIsBeforeDate(chat, cutoff) {
+    const range = parseSidebarDateRange(chat.dateLabel);
+    if (!range) return false;
+    return range.end <= cutoff;
+  }
+
   function makeOverlay(chats) {
     document.getElementById('vanick-cleaner-overlay')?.remove();
 
@@ -982,6 +1102,8 @@
       #vanick-cleaner-overlay .vc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 24px;border-bottom:1px solid var(--vc-border);background:var(--vc-panel)}
       #vanick-cleaner-overlay .vc-summary{color:var(--vc-muted);font-size:12px;font-weight:650}
       #vanick-cleaner-overlay .vc-toolbar-actions{display:flex;gap:7px;flex-wrap:wrap}
+      #vanick-cleaner-overlay .vc-date-controls{display:grid;grid-template-columns:minmax(125px,1fr) minmax(125px,1fr) auto minmax(125px,1fr) auto;gap:7px;align-items:center;padding:10px 24px;border-bottom:1px solid var(--vc-border);background:var(--vc-panel)}
+      #vanick-cleaner-overlay .vc-date-controls .vc-input{width:100%}
       #vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{min-height:120px;overflow:auto;padding:14px 16px 16px;scrollbar-color:var(--vc-border-strong) transparent}
       #vanick-cleaner-overlay .vc-list{display:grid;gap:8px}
       #vanick-cleaner-overlay .vc-row{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;padding:12px 13px;border:1px solid var(--vc-border);border-radius:12px;background:var(--vc-surface);cursor:pointer;transition:background .14s ease,border-color .14s ease,transform .14s ease}
@@ -1030,7 +1152,7 @@
       #vanick-cleaner-overlay .vc-button-danger{color:#fff;border-color:var(--vc-danger);background:var(--vc-danger)}
       #vanick-cleaner-overlay .vc-button-danger:hover:not(:disabled){border-color:var(--vc-danger-hover);background:var(--vc-danger-hover)}
       #vanick-cleaner-overlay .vc-button-accent{color:#fff;border-color:var(--vc-accent);background:var(--vc-accent)}
-      @media (max-width:640px){#vanick-cleaner-overlay{padding:10px}#vanick-cleaner-overlay .vc-panel{max-height:92vh;border-radius:16px}#vanick-cleaner-overlay .vc-header{padding:18px 16px 14px}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{padding:10px}#vanick-cleaner-overlay .vc-filter-grid{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-footer{padding:12px}#vanick-cleaner-overlay .vc-chat-head{align-items:flex-start}#vanick-cleaner-overlay .vc-chat-title{white-space:normal}}
+      @media (max-width:640px){#vanick-cleaner-overlay{padding:10px}#vanick-cleaner-overlay .vc-date-controls{grid-template-columns:1fr 1fr}#vanick-cleaner-overlay .vc-panel{max-height:92vh;border-radius:16px}#vanick-cleaner-overlay .vc-header{padding:18px 16px 14px}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{padding:10px}#vanick-cleaner-overlay .vc-filter-grid{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-footer{padding:12px}#vanick-cleaner-overlay .vc-chat-head{align-items:flex-start}#vanick-cleaner-overlay .vc-chat-title{white-space:normal}}
     `;
     overlay.appendChild(style);
 
@@ -1400,42 +1522,48 @@
       refreshSelection();
     };
 
-    const dateFilter = document.createElement('select');
-    dateFilter.className = 'vc-input';
-    dateFilter.style.cssText = 'width:auto;min-width:130px;flex:0 0 auto;';
-    dateFilter.innerHTML = '<option value="">All dates</option>';
+    const dateControls = document.createElement('div');
+    dateControls.className = 'vc-date-controls';
 
-    const dateLabels = [...new Set(chats.map(chat => chat.dateLabel || 'Unknown date'))];
-    for (const label of dateLabels) {
-      const option = document.createElement('option');
-      option.value = label;
-      option.textContent = label;
-      dateFilter.appendChild(option);
-    }
+    const fromDate = document.createElement('input');
+    fromDate.type = 'date';
+    fromDate.className = 'vc-input';
+    fromDate.title = 'Start date';
 
-    const selectDate = button('Select date', 'secondary');
-    selectDate.disabled = true;
+    const toDate = document.createElement('input');
+    toDate.type = 'date';
+    toDate.className = 'vc-input';
+    toDate.title = 'End date';
 
-    selectDate.onclick = () => {
-      const chosenDate = dateFilter.value;
-      if (!chosenDate) return;
+    const selectRange = button('Select range', 'secondary');
+    selectRange.onclick = () => {
+      const start = parseDateInput(fromDate.value);
+      const end = parseDateInput(toDate.value);
+      if (!start || !end) return;
 
-      for (const item of rows) {
-        item.checkbox.checked = (item.chat.dateLabel || 'Unknown date') === chosenDate;
-      }
+      const lower = start <= end ? start : end;
+      const upper = start <= end ? end : start;
 
+      rows.forEach(item => {
+        item.checkbox.checked = chatMatchesDateRange(item.chat, lower, upper);
+      });
       refreshSelection();
     };
 
-    dateFilter.onchange = () => {
-      const chosenDate = dateFilter.value;
+    const beforeDate = document.createElement('input');
+    beforeDate.type = 'date';
+    beforeDate.className = 'vc-input';
+    beforeDate.title = 'Select chats on or before this date';
 
-      for (const item of rows) {
-        item.row.hidden = Boolean(chosenDate) && (item.chat.dateLabel || 'Unknown date') !== chosenDate;
-      }
+    const selectBefore = button('Select before', 'secondary');
+    selectBefore.onclick = () => {
+      const cutoff = parseDateInput(beforeDate.value);
+      if (!cutoff) return;
 
-      selectDate.disabled = !chosenDate;
-      selectDate.textContent = chosenDate ? `Select ${chosenDate}` : 'Select date';
+      rows.forEach(item => {
+        item.checkbox.checked = chatIsBeforeDate(item.chat, cutoff);
+      });
+      refreshSelection();
     };
 
     const refreshHistory = button('Refresh history', 'secondary');
@@ -1445,8 +1573,10 @@
       await chatCleaner(true);
     };
 
-    toolbarActions.append(manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, dateFilter, selectDate, refreshHistory);
+    dateControls.append(fromDate, toDate, selectRange, beforeDate, selectBefore);
+    toolbarActions.append(manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, refreshHistory);
     toolbar.append(summary, toolbarActions);
+    panel.append(dateControls);
     panel.append(toolbar, listWrap, filterManager, selectionReview);
 
     footer = document.createElement('div');
