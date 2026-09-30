@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+- Added persistent chat caching so previously loaded chat history can reopen without rescanning the full sidebar every time.
+- Added date labels to chats when the client exposes date groups in the sidebar.
+- Added date filtering and a Select date control in Chat Cleaner.
+- Added a Refresh history control so the cached history can be rebuilt when needed.
+
+### Community
+- Thanks to @sam-cre for suggesting chat caching and date based cleaner controls in issues #4 and #5.
+
 ## 0.4.2
 
 ### Fixed
