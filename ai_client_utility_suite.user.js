@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.5.4
+// @version      0.5.5
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -38,6 +38,7 @@
   let cachedHistory = null;
   let stopSearchIndexing = null;
   let searchIndexDialog = null;
+  let launcherScan = null;
 
   const platform = () => location.hostname.includes("claude.ai") ? "Claude" : "ChatGPT";
 
@@ -445,6 +446,106 @@
       stopSearchIndexing = null;
     };
     capture();
+  }
+
+  function searchScrollContainer(dialog) {
+    const candidates = [dialog, ...dialog.querySelectorAll('*')].filter(element =>
+      /(auto|scroll)/.test(getComputedStyle(element).overflowY) &&
+      element.scrollHeight > element.clientHeight + 4
+    );
+    return candidates.sort((a, b) => b.scrollHeight - a.scrollHeight)[0] || null;
+  }
+
+  function scanCanFinish({ count, busy, atBottom, now, lastGrowth }) {
+    return count > 0 && !busy && atBottom && now - lastGrowth >= 15000;
+  }
+
+  async function openToolsWithSearch() {
+    if (platform() !== 'ChatGPT') return openMenu();
+    if (launcherScan) return;
+    const run = { cancelled: false };
+    launcherScan = run;
+    document.getElementById(APP_ID + '-modal')?.remove();
+    document.getElementById('vanick-cleaner-overlay')?.remove();
+    const popup = document.createElement('div');
+    popup.id = APP_ID + '-search-progress';
+    popup.setAttribute('role', 'status');
+    popup.setAttribute('aria-live', 'polite');
+    popup.style.cssText = 'position:fixed;bottom:70px;right:18px;z-index:2147483647;width:min(360px,calc(100vw - 60px));padding:18px;background:#181818;color:#fff;border:1px solid #666;border-radius:16px;font:14px system-ui;box-shadow:0 12px 40px #0006';
+    const heading = document.createElement('strong');
+    heading.textContent = 'Searching through your chats…';
+    const status = document.createElement('p');
+    status.textContent = 'Opening Search chats. Slower connections may take a little longer.';
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Stop and open tools';
+    cancel.onclick = () => { run.cancelled = true; };
+    popup.append(heading, status, cancel);
+    document.body.append(popup);
+    let dialog = nativeSearchDialog();
+    const openedSearch = !dialog;
+    let message = '';
+    try {
+      if (!dialog) {
+        const search = [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
+          visible(element) && !element.closest(`#${APP_ID}-search-progress, .acus-backdrop, #vanick-cleaner-overlay`) &&
+          /^(search chats|search)(?:\s|$)/i.test(elementText(element))
+        );
+        if (!search) throw new Error('Search chats is unavailable. You can still use the sidebar tools.');
+        search.click();
+        const deadline = Date.now() + 45000;
+        while (!run.cancelled && !dialog && Date.now() < deadline) {
+          await sleep(250);
+          dialog = nativeSearchDialog();
+        }
+        if (!dialog && !run.cancelled) throw new Error('Search chats took too long to open. Try again when your connection is ready.');
+      }
+      if (dialog && !run.cancelled) {
+        const collected = new Map();
+        const started = Date.now();
+        let lastGrowth = started;
+        let lastHeight = 0;
+        let finished = false;
+        while (!run.cancelled && dialog.isConnected && Date.now() - started < 180000) {
+          const previousCount = collected.size;
+          mergeChats(collected, getChatLinks(dialog));
+          if (collected.size) rememberChats([...collected.values()]);
+          const container = searchScrollContainer(dialog);
+          const height = container?.scrollHeight || 0;
+          if (collected.size > previousCount || height !== lastHeight) lastGrowth = Date.now();
+          lastHeight = height;
+          const busy = dialog.getAttribute('aria-busy') === 'true' ||
+            [...dialog.querySelectorAll('[aria-busy="true"], [role="progressbar"]')].some(visible);
+          const atBottom = !container || container.scrollTop >= container.scrollHeight - container.clientHeight - 6;
+          status.textContent = `${collected.size} chats found. ${busy ? 'Waiting for results to load…' : 'Checking for more results…'} You can stop at any time.`;
+          if (scanCanFinish({ count: collected.size, busy, atBottom, now: Date.now(), lastGrowth })) {
+            finished = true;
+            break;
+          }
+          if (!collected.size && !busy && Date.now() - started >= 45000) break;
+          if (container && !busy) {
+            container.scrollTop = Math.min(container.scrollTop + Math.max(220, container.clientHeight * 0.7), container.scrollHeight);
+            container.dispatchEvent(new Event('scroll', { bubbles: true }));
+          }
+          await sleep(750);
+        }
+        const finalChats = getChatLinks(dialog);
+        mergeChats(collected, finalChats);
+        if (collected.size) rememberChats([...collected.values()]);
+        message = run.cancelled ? `Stopped. Saved ${collected.size} chats found so far.` :
+          finished ? `Indexed ${collected.size} chats exposed by Search. Search may not show your entire history.` :
+          `Saved ${collected.size} chats so far. Search ended or timed out; more chats may still be available.`;
+      }
+    } catch (error) {
+      message = error.message;
+    } finally {
+      if (openedSearch && dialog?.isConnected) {
+        const close = [...dialog.querySelectorAll('button')].find(element => visible(element) && /^(close|cancel)(?:\s|$)/i.test(elementText(element)));
+        close?.click();
+      }
+      popup.remove();
+      launcherScan = null;
+      openMenu(message || 'Search stopped. Your saved chats are available.');
+    }
   }
 
   function forgetChat(href) {
@@ -1936,9 +2037,15 @@
     search.focus();
   }
 
-  function openMenu() {
+  function openMenu(message = '') {
     const box = document.createElement("div");
     box.className = "acus-menu";
+    if (message) {
+      const status = document.createElement('div');
+      status.className = 'acus-status';
+      status.textContent = message;
+      box.append(status);
+    }
     [["🔎 Search Chats", searchChats], ["📦 Bulk Archive", bulkArchive], ["🧹 Chat Cleaner", () => chatCleaner(false)], ["📚 Prompt Library", promptLibrary]].forEach(([label, fn]) => {
       const b = document.createElement("button");
       b.className = "acus-menu-btn";
@@ -1985,7 +2092,7 @@
     const btn = document.createElement("button");
     btn.id = APP_ID + "-launcher";
     btn.textContent = "🧰 AI Tools";
-    btn.onclick = openMenu;
+    btn.onclick = openToolsWithSearch;
     ensureLauncherDock().append(btn);
   }
 

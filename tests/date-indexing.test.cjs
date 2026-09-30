@@ -10,9 +10,19 @@ const context = vm.createContext({
   document: {}, console,
 });
 vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) +
-  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats }; })();', context);
+  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, scanCanFinish }; })();', context);
 const h = context.helpers;
 const day = value => h.parseDateInput(value);
+
+test('scan waits for delayed results, bottom of list, and loading completion', () => {
+  const state = { count: 10, busy: false, atBottom: true, now: 15000, lastGrowth: 0 };
+  assert.equal(h.scanCanFinish(state), true);
+  assert.equal(h.scanCanFinish({ ...state, now: 14999 }), false);
+  assert.equal(h.scanCanFinish({ ...state, lastGrowth: 10000 }), false);
+  assert.equal(h.scanCanFinish({ ...state, busy: true, now: 120000 }), false);
+  assert.equal(h.scanCanFinish({ ...state, atBottom: false }), false);
+  assert.equal(h.scanCanFinish({ ...state, count: 0, now: 120000 }), false);
+});
 
 test('invalid and absent exposed dates remain unknown', () => {
   for (const value of ['', undefined, 'Unknown date', 'September', '2026-02-30', '2026-13-01', '2026-02-30T12:00:00Z']) {

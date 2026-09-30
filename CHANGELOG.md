@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.5
+
+### Added
+- AI Tools automatically opens native ChatGPT Search and scrolls through available results before showing the tools menu.
+- A Searching through your chats popup with a live count and Stop and open tools control.
+
+### Improved
+- Allow 45 seconds for Search to open or initial results to arrive, wait for loading indicators, and require 15 seconds without new results at the bottom before ending the scan.
+- Preserve collected results on cancellation or the three-minute scan timeout and report incomplete coverage. Repeated launcher clicks do not start overlapping scans.
+- Preserve an already-open Search dialog and its query; Claude continues opening the tools menu directly.
+
 ## 0.5.4
 
 ### Changed
