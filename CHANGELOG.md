@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+- Integrated Chat Cleaner directly into AI Client Utility Suite.
+- Added cleaner filters, protected filters, suggested chat selection, title filtering, and confirmed bulk deletion inside the shared AI Tools menu.
+- Reused the suite's full history loading and chat lookup logic so cleaner, search, and archive features work from the same loaded chat history.
+
+### Changed
+- Chat Cleaner is now available from the main AI Tools launcher instead of requiring a separate interface.
+- Cleaner filter settings are stored with the utility suite so the combined app can manage them from one place.
+
+# Changelog
+
 ## 0.3.0
 
 ### Added
