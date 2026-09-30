@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.5.8
+// @version      0.5.9
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -960,12 +960,12 @@
       border: '#34343a',
       borderStrong: '#45454d',
       text: '#f4f4f5',
-      muted: '#a1a1aa',
+      muted: '#c4cfdd',
       subtle: '#71717a',
-      accent: '#93a4ff',
+      accent: '#2563eb',
       accentSoft: 'rgba(147,164,255,.13)',
       accentBorder: 'rgba(147,164,255,.34)',
-      danger: '#f87171',
+      danger: '#b91c1c',
       dangerHover: '#ef4444',
       dangerSoft: 'rgba(248,113,113,.12)',
       success: '#86efac',
@@ -979,9 +979,9 @@
       border: '#e4e4e7',
       borderStrong: '#d4d4d8',
       text: '#18181b',
-      muted: '#71717a',
+      muted: '#475569',
       subtle: '#a1a1aa',
-      accent: '#5968d9',
+      accent: '#1d4ed8',
       accentSoft: 'rgba(89,104,217,.08)',
       accentBorder: 'rgba(89,104,217,.24)',
       danger: '#dc2626',
@@ -1226,6 +1226,35 @@
       #vanick-cleaner-overlay .vc-button-danger{color:#fff;border-color:var(--vc-danger);background:var(--vc-danger)}
       #vanick-cleaner-overlay .vc-button-danger:hover:not(:disabled){border-color:var(--vc-danger-hover);background:var(--vc-danger-hover)}
       #vanick-cleaner-overlay .vc-button-accent{color:#fff;border-color:var(--vc-accent);background:var(--vc-accent)}
+      #vanick-cleaner-overlay .vc-panel{border:2px solid var(--vc-border-strong);overflow:auto}
+      #vanick-cleaner-overlay .vc-header{background:linear-gradient(120deg,var(--vc-accent-soft),var(--vc-panel));border-bottom:2px solid var(--vc-accent-border);padding:18px 20px}
+      #vanick-cleaner-overlay .vc-brand{flex:1}
+      #vanick-cleaner-overlay .vc-icon-button{width:42px;height:42px;color:var(--vc-text);background:var(--vc-surface);border:1px solid var(--vc-border-strong);font-size:24px}
+      #vanick-cleaner-overlay .vc-button{min-height:42px;padding:10px 14px;font-size:13px;border-color:var(--vc-border-strong);box-shadow:0 1px 2px #0001}
+      #vanick-cleaner-overlay .vc-button-accent:hover:not(:disabled){color:#fff;background:#1e40af;border-color:#1e40af}
+      #vanick-cleaner-overlay .vc-button:focus-visible,#vanick-cleaner-overlay .vc-icon-button:focus-visible,#vanick-cleaner-overlay .vc-chip-remove:focus-visible{outline:3px solid var(--vc-accent);outline-offset:3px}
+      #vanick-cleaner-overlay .vc-input{height:42px;font-size:13px;border-color:var(--vc-border-strong)}
+      #vanick-cleaner-overlay .vc-summary{color:var(--vc-text);font-size:14px;background:var(--vc-accent-soft);padding:8px 12px;border-radius:8px}
+      #vanick-cleaner-overlay .vc-date-controls{gap:10px;padding:16px 20px;background:var(--vc-accent-soft);border-top:1px solid var(--vc-accent-border);border-bottom:1px solid var(--vc-accent-border)}
+      #vanick-cleaner-overlay .vc-field{display:grid;gap:6px;font-size:12px;font-weight:700;color:var(--vc-text)}
+      #vanick-cleaner-overlay .vc-date-controls>.vc-button{align-self:end}
+      #vanick-cleaner-overlay .vc-row{padding:14px;border-color:var(--vc-border-strong)}
+      #vanick-cleaner-overlay .vc-row.vc-selected{border:2px solid var(--vc-accent);padding:13px;background:var(--vc-accent-soft);box-shadow:inset 4px 0 var(--vc-accent)}
+      #vanick-cleaner-overlay .vc-checkbox{width:21px;height:21px}
+      #vanick-cleaner-overlay .vc-chat-title{font-size:14px}
+      #vanick-cleaner-overlay .vc-detail{font-size:12px}
+      #vanick-cleaner-overlay .vc-footer{border-top:2px solid var(--vc-border-strong);background:var(--vc-surface)}
+      #vanick-cleaner-overlay .vc-status{font-size:12px;color:var(--vc-text)}
+      #vanick-cleaner-overlay .vc-action-group{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px;border:1px solid var(--vc-border);border-radius:10px}
+      #vanick-cleaner-overlay .vc-action-label{font-size:11px;font-weight:750;color:var(--vc-muted);width:100%}
+      #vanick-cleaner-overlay .vc-panel{max-height:calc(100vh - 48px);overflow:hidden}
+      #vanick-cleaner-overlay .vc-header,#vanick-cleaner-overlay .vc-toolbar,#vanick-cleaner-overlay .vc-date-controls,#vanick-cleaner-overlay .vc-footer{flex-shrink:0}
+      #vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{flex:1;min-height:100px}
+      #vanick-cleaner-overlay .vc-toolbar:has(.vc-toolbar-actions){display:block;padding:10px 20px}
+      #vanick-cleaner-overlay .vc-toolbar-actions{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:8px;margin-top:8px}
+      #vanick-cleaner-overlay .vc-action-group{gap:6px}
+      #vanick-cleaner-overlay .vc-action-group .vc-button{padding:8px 10px;font-size:12px;min-height:38px}
+      @media(max-width:640px),(max-height:650px){#vanick-cleaner-overlay .vc-panel{overflow:auto;max-height:calc(100vh - 20px)}#vanick-cleaner-overlay .vc-toolbar-actions{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-date-controls>.vc-button{grid-column:1/-1}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{flex:none;max-height:320px;overflow:auto}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}}
       @media (max-width:640px){#vanick-cleaner-overlay{padding:10px}#vanick-cleaner-overlay .vc-date-controls{grid-template-columns:1fr 1fr}#vanick-cleaner-overlay .vc-panel{max-height:92vh;border-radius:16px}#vanick-cleaner-overlay .vc-header{padding:18px 16px 14px}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{padding:10px}#vanick-cleaner-overlay .vc-filter-grid{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-footer{padding:12px}#vanick-cleaner-overlay .vc-chat-head{align-items:flex-start}#vanick-cleaner-overlay .vc-chat-title{white-space:normal}}
     `;
     overlay.appendChild(style);
@@ -1247,7 +1276,7 @@
     headingText.style.minWidth = '0';
     headingText.innerHTML = `
       <div class="vc-title-row"><div class="vc-title">Chat Cleaner</div><span class="vc-platform">${escapeHtml(current)}</span></div>
-      <div class="vc-subtitle">Review conversations found across the full scrollable chat history before deleting. Suggested filters can be selected manually, while protected filters prevent automatic selection.</div>
+      <div class="vc-subtitle">Choose a chat range or check individual chats. Review your selection, then confirm deletion.</div>
     `;
 
     brand.append(icon, headingText);
@@ -1363,7 +1392,7 @@
 
     listWrap.appendChild(list);
 
-    const reviewSelected = button('Review selected', 'secondary');
+    const reviewSelected = button('Review selected', 'accent');
 
     function renderSelectedReview() {
       selectionReview.replaceChildren();
@@ -1633,7 +1662,7 @@
     fromNumber.setAttribute('aria-label', 'From chat number');
     toNumber.placeholder = 'To chat #';
     toNumber.setAttribute('aria-label', 'To chat number');
-    const selectNumberRange = button('Select number range', 'secondary');
+    const selectNumberRange = button('Select number range', 'accent');
     selectNumberRange.disabled = true;
     const refreshNumberRange = () => {
       selectNumberRange.disabled = !parseNumberRange(fromNumber.value, toNumber.value, chats.length);
@@ -1652,8 +1681,17 @@
     const numberHint = document.createElement('div');
     numberHint.className = 'vc-subtitle';
     numberHint.style.cssText = 'grid-column:1/-1;max-width:none';
-    numberHint.textContent = 'Chat #1 is at the oldest end of sidebar order. Sorting does not change numbers. Refreshing history can change numbers. Range selection skips protected chats.';
-    numberControls.append(fromNumber, toNumber, selectNumberRange, numberHint);
+    numberHint.textContent = 'Sorting keeps chat numbers unchanged. Number ranges skip protected chats.';
+    numberHint.title = 'Chat #1 is at the oldest end of sidebar order. Refreshing history can change numbers.';
+    const fromField = document.createElement('label');
+    fromField.className = 'vc-field';
+    fromField.textContent = 'From chat number';
+    fromField.append(fromNumber);
+    const toField = document.createElement('label');
+    toField.className = 'vc-field';
+    toField.textContent = 'To chat number';
+    toField.append(toNumber);
+    numberControls.append(fromField, toField, selectNumberRange, numberHint);
 
     const refreshHistory = button('Refresh history', 'secondary');
     refreshHistory.onclick = async () => {
@@ -1662,7 +1700,19 @@
       await chatCleaner(true);
     };
 
-    toolbarActions.append(manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, refreshHistory);
+    const selectionActions = document.createElement('div');
+    selectionActions.className = 'vc-action-group';
+    const selectionLabel = document.createElement('span');
+    selectionLabel.className = 'vc-action-label';
+    selectionLabel.textContent = 'Select and review';
+    selectionActions.append(selectionLabel, selectSuggested, selectAll, deselectAll, reviewSelected);
+    const historyActions = document.createElement('div');
+    historyActions.className = 'vc-action-group';
+    const historyLabel = document.createElement('span');
+    historyLabel.className = 'vc-action-label';
+    historyLabel.textContent = 'History and filters';
+    historyActions.append(historyLabel, manageFilters, refreshHistory);
+    toolbarActions.append(selectionActions, historyActions);
     toolbar.append(summary, toolbarActions);
     const sortBar = document.createElement('div');
     sortBar.className = 'vc-toolbar';
@@ -1979,10 +2029,14 @@
   function openMenu() {
     const box = document.createElement("div");
     box.className = "acus-menu";
-    [["🔎 Search Chats", searchChats], ["📦 Bulk Archive", bulkArchive], ["🧹 Chat Cleaner", () => chatCleaner(false)], ["📚 Prompt Library", promptLibrary]].forEach(([label, fn]) => {
+    [["🔎 Search Chats", searchChats, 'Find conversations by title'], ["📦 Bulk Archive", bulkArchive, 'Move selected chats out of your sidebar'], ["🧹 Chat Cleaner", () => chatCleaner(false), 'Select numbered chats and review before deleting'], ["📚 Prompt Library", promptLibrary, 'Save, reuse, and back up your prompts']].forEach(([label, fn, description]) => {
       const b = document.createElement("button");
       b.className = "acus-menu-btn";
-      b.textContent = label;
+      const name = document.createElement('strong');
+      name.textContent = label;
+      const detail = document.createElement('span');
+      detail.textContent = description;
+      b.append(name, detail);
       b.onclick = fn;
       box.append(b);
     });
@@ -2019,6 +2073,23 @@
       .acus-prompt{border-top:1px solid #333;padding:14px 0}.acus-prompt strong{display:block;margin-bottom:9px}.acus-prompt-actions{display:flex;gap:7px;margin-bottom:9px}
       .acus-library-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}.acus-library-status{color:#aaa}.acus-error{color:#ff8585}
       .acus-archive-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.acus-archive-toolbar button,.acus-archive-submit{background:#2b2b2b;color:#fff;border:1px solid #444;border-radius:10px;padding:8px 11px;cursor:pointer}.acus-archive-toolbar button:disabled,.acus-archive-submit:disabled{opacity:.5;cursor:not-allowed}.acus-archive-count{color:#aaa;margin-left:auto}.acus-archive-list{max-height:430px;overflow:auto;border:1px solid #333;border-radius:12px;padding:8px}.acus-archive-row{display:flex;align-items:center;gap:10px;padding:10px;border-radius:9px;cursor:pointer}.acus-archive-row:hover,.acus-archive-row.acus-selected{background:#2b2b2b}.acus-archive-row input{flex:0 0 auto}.acus-archive-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acus-archive-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.acus-archive-progress{color:#aaa;min-width:0}
+      .acus-modal{background:#101827;border:1px solid #64748b;box-shadow:0 24px 80px #0008}
+      .acus-head{background:#17243b;border-bottom:1px solid #64748b;gap:14px;z-index:1}
+      .acus-head strong{flex:1;font-size:18px}
+      .acus-modal button{font:600 14px system-ui;min-height:42px;padding:10px 14px;border:1px solid #64748b;border-radius:10px;background:#24334b;color:#f8fafc;cursor:pointer}
+      .acus-modal button:hover:not(:disabled){background:#334966;border-color:#93c5fd}
+      .acus-modal button:focus-visible,.acus-modal input:focus-visible,.acus-modal textarea:focus-visible{outline:3px solid #60a5fa;outline-offset:3px}
+      .acus-modal button:disabled{opacity:.45;cursor:not-allowed}
+      .acus-menu-btn{display:grid;gap:7px;width:100%;border-left:4px solid #60a5fa!important;text-align:left;padding:18px!important}
+      .acus-menu-btn strong{font-size:16px}.acus-menu-btn span{color:#cbd5e1;font-size:13px;font-weight:400}
+      .acus-input{background:#0b1220;border-color:#64748b;color:#f8fafc;font-size:14px}
+      .acus-input::placeholder{color:#aebdd0}
+      .acus-status,.acus-muted,.acus-library-status,.acus-archive-count,.acus-archive-progress{color:#cbd5e1}
+      .acus-modal .acus-primary,.acus-modal .acus-archive-submit:not(:disabled){background:#1d4ed8;border-color:#3b82f6;color:#fff}
+      .acus-modal .acus-primary:hover,.acus-modal .acus-archive-submit:not(:disabled):hover{background:#1e40af}
+      #${APP_ID}-launcher{background:#1d4ed8;border-color:#60a5fa;color:white;min-height:44px;font-size:14px;padding:10px 17px}
+      #${APP_ID}-launcher:hover{background:#1e40af;border-color:#bfdbfe}
+      @media(max-width:640px){.acus-backdrop{padding:10px}.acus-modal{max-height:92vh}.acus-library-tools,.acus-archive-footer{flex-wrap:wrap}.acus-archive-progress{width:100%}}
     `;
     document.head.append(style);
 

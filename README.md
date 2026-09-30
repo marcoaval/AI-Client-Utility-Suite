@@ -61,7 +61,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Early development. Version 0.5.8 combines sidebar search, cached history, numbered range selection and sorting, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
+Early development. Version 0.5.9 combines sidebar search, cached history, numbered range selection and sorting, bulk archiving, Chat Cleaner, and the shared Prompt Library with clearer controls and stronger visual contrast.
 
 ## Privacy
 

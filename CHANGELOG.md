@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.9
+
+### Improved
+- Stronger button and input contrast, larger click targets, visible keyboard focus, and clearer selected chat styling.
+- Blue range and review actions, distinct red delete controls, and grouped selection versus history settings.
+- Persistent labels on number fields and plain descriptions on the main tool buttons.
+- Brighter navigation controls and a clearer launcher across the suite.
+
+### Community
+- Thanks to @sam-cre for the original Prompt Library spacing feedback in issue #2 and chat organization suggestions in issue #5. This update continues improving readability and organization.
+
 ## 0.5.8
 
 ### Added
