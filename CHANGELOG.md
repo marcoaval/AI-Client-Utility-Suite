@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.2
+
+### Fixed
+- Reworked date selection so users can select a custom date range instead of choosing a single sidebar date group.
+- Added an option to select chats on or before a chosen date.
+- Improved full history loading so the scanner keeps checking for newly loaded conversations before deciding it reached the end.
+
 ## 0.5.1
 
 ### Fixed
