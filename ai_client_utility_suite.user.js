@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.3.0
+// @version      0.4.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -17,6 +17,22 @@
 
   const APP_ID = "ai-client-utility-suite";
   const STORAGE_KEY = "aiClientUtilitySuite.prompts";
+  const CLEANER_FILTER_KEY = "aiClientUtilitySuite.cleanerFilters";
+  const DEFAULT_CLEANER_FILTERS = {
+    suggested: [
+      "health", "medical", "doctor", "symptom", "injury",
+      "relationship", "dating", "family", "personal",
+      "pet", "housing", "apartment", "address",
+      "job", "work", "membership", "finance",
+      "travel", "shopping", "appointment"
+    ],
+    protected: [
+      "class", "course", "syllabus", "assignment", "discussion", "lab",
+      "school", "college", "university", "excel", "github",
+      "python", "powershell", "bash", "coding", "programming",
+      "cybersecurity", "project", "resume", "study"
+    ]
+  };
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   let cachedHistory = null;
 
@@ -65,6 +81,54 @@
 
   function savePrompts(prompts) {
     GM_setValue(STORAGE_KEY, JSON.stringify(normalizePrompts(prompts)));
+  }
+
+  function cleanFilterList(values) {
+    if (!Array.isArray(values)) return [];
+    return [...new Set(values.map(value => String(value || "").trim().toLowerCase()).filter(Boolean))];
+  }
+
+  function loadCleanerFilters() {
+    try {
+      const stored = GM_getValue(CLEANER_FILTER_KEY, "");
+      if (!stored) {
+        return {
+          suggested: [...DEFAULT_CLEANER_FILTERS.suggested],
+          protected: [...DEFAULT_CLEANER_FILTERS.protected]
+        };
+      }
+
+      const parsed = typeof stored === "string" ? JSON.parse(stored) : stored;
+      return {
+        suggested: cleanFilterList(parsed?.suggested ?? DEFAULT_CLEANER_FILTERS.suggested),
+        protected: cleanFilterList(parsed?.protected ?? DEFAULT_CLEANER_FILTERS.protected)
+      };
+    } catch {
+      return {
+        suggested: [...DEFAULT_CLEANER_FILTERS.suggested],
+        protected: [...DEFAULT_CLEANER_FILTERS.protected]
+      };
+    }
+  }
+
+  function saveCleanerFilters(filters) {
+    GM_setValue(CLEANER_FILTER_KEY, JSON.stringify({
+      suggested: cleanFilterList(filters.suggested),
+      protected: cleanFilterList(filters.protected)
+    }));
+  }
+
+  function classifyForCleaner(chat, filters) {
+    const title = chat.title.toLowerCase();
+    const matches = filters.suggested.filter(keyword => title.includes(keyword));
+    const protectedMatches = filters.protected.filter(keyword => title.includes(keyword));
+
+    return {
+      ...chat,
+      matches,
+      protectedMatches,
+      suggested: matches.length > 0 && protectedMatches.length === 0
+    };
   }
 
   function chatLinkElements() {
@@ -444,6 +508,66 @@
     await sleep(200);
   }
 
+  function deleteActions(root = document.body) {
+    const selectors = [
+      "button",
+      '[role="button"]',
+      '[role="menuitem"]',
+      '[role="option"]',
+      '[data-testid*="delete"]',
+      '[aria-label*="delete" i]'
+    ].join(",");
+
+    return [...root.querySelectorAll(selectors)]
+      .filter(element => visible(element) && !utilityContains(element))
+      .filter(element => /delete/.test(elementText(element)))
+      .map(element => actionableAncestor(element))
+      .filter(Boolean);
+  }
+
+  function menuDeleteAction() {
+    const candidates = [...new Set(deleteActions())];
+
+    return candidates.find(element =>
+      element.closest('[role="menu"], [role="menuitem"], [data-radix-menu-content], [data-slot*="menu"], [data-slot*="dropdown"]')
+    ) || candidates.find(element => !element.closest('[role="dialog"], [role="alertdialog"]')) || null;
+  }
+
+  function confirmationDeleteAction() {
+    const dialogs = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')]
+      .filter(visible)
+      .filter(dialog => !utilityContains(dialog));
+
+    for (const dialog of dialogs) {
+      const candidates = [...new Set(deleteActions(dialog))];
+      const exact = candidates.find(element => elementText(element) === "delete");
+      if (exact) return exact;
+      if (candidates.length) return candidates.at(-1);
+    }
+
+    return null;
+  }
+
+  async function deleteChat(chat) {
+    await openChatMenu(chat);
+
+    const deleteAction = await waitFor(menuDeleteAction, 3000, 80);
+    if (!deleteAction) throw new Error("The chat menu opened, but the Delete command was not found.");
+
+    activate(deleteAction);
+
+    const confirmButton = await waitFor(confirmationDeleteAction, 5000, 100);
+    if (!confirmButton) throw new Error("The Delete command was found, but the confirmation control was not found.");
+
+    activate(confirmButton);
+
+    const removed = await waitFor(() => !findChatLink(chat.href), 5000, 120);
+    if (!removed) throw new Error("Delete was confirmed, but the chat remained visible in the sidebar.");
+
+    forgetChat(chat.href);
+    await sleep(200);
+  }
+
   function modal(title, body) {
     document.getElementById(APP_ID + "-modal")?.remove();
     const wrap = document.createElement("div");
@@ -644,6 +768,235 @@
     modal("Prompt Library", box);
   }
 
+  async function chatCleaner() {
+    const box = document.createElement("div");
+    box.innerHTML = `
+      <div class="acus-status">Loading full chat history...</div>
+      <div class="acus-cleaner-toolbar">
+        <button class="acus-secondary acus-cleaner-suggested" disabled>Select suggested</button>
+        <button class="acus-secondary acus-cleaner-all" disabled>Select all</button>
+        <button class="acus-secondary acus-cleaner-none" disabled>Deselect all</button>
+        <button class="acus-secondary acus-cleaner-filters" disabled>Manage filters</button>
+        <span class="acus-cleaner-count">0 selected</span>
+      </div>
+      <input class="acus-input acus-cleaner-search" placeholder="Filter chat titles..." disabled>
+      <div class="acus-cleaner-list"></div>
+      <div class="acus-cleaner-footer">
+        <span class="acus-cleaner-progress">Nothing is deleted until you confirm.</span>
+        <button class="acus-cleaner-delete" disabled>Delete selected</button>
+      </div>`;
+
+    const status = box.querySelector(".acus-status");
+    const search = box.querySelector(".acus-cleaner-search");
+    const list = box.querySelector(".acus-cleaner-list");
+    const selectSuggested = box.querySelector(".acus-cleaner-suggested");
+    const selectAll = box.querySelector(".acus-cleaner-all");
+    const deselectAll = box.querySelector(".acus-cleaner-none");
+    const manageFilters = box.querySelector(".acus-cleaner-filters");
+    const count = box.querySelector(".acus-cleaner-count");
+    const progress = box.querySelector(".acus-cleaner-progress");
+    const remove = box.querySelector(".acus-cleaner-delete");
+
+    modal("Chat Cleaner", box);
+
+    let chats;
+    if (cachedHistory) {
+      chats = rememberChats(getChatLinks());
+      status.textContent = `${chats.length} chats loaded`;
+    } else {
+      chats = await loadAllChats((loaded, loading) => {
+        status.textContent = loading ? `Loading chat history (${loaded})...` : `${loaded} chats loaded`;
+      });
+      chats = rememberChats(chats);
+    }
+
+    let filters = loadCleanerFilters();
+    const selected = new Set();
+
+    const classified = () => chats.map(chat => classifyForCleaner(chat, filters));
+    const visibleChats = () => {
+      const query = search.value.toLowerCase().trim();
+      return classified().filter(chat => !query || chat.title.toLowerCase().includes(query));
+    };
+
+    const refreshControls = () => {
+      count.textContent = `${selected.size} selected`;
+      remove.disabled = selected.size === 0;
+      remove.textContent = selected.size ? `Delete selected (${selected.size})` : "Delete selected";
+    };
+
+    const render = () => {
+      list.replaceChildren();
+      const shown = visibleChats();
+
+      const summary = document.createElement("div");
+      summary.className = "acus-muted";
+      summary.textContent = `${shown.length} of ${chats.length} chats shown`;
+      list.append(summary);
+
+      for (const chat of shown) {
+        const row = document.createElement("label");
+        row.className = "acus-cleaner-row";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = selected.has(chat.href);
+        checkbox.onchange = () => {
+          if (checkbox.checked) selected.add(chat.href);
+          else selected.delete(chat.href);
+          row.classList.toggle("acus-selected", checkbox.checked);
+          refreshControls();
+        };
+
+        const info = document.createElement("div");
+        info.className = "acus-cleaner-info";
+
+        const title = document.createElement("div");
+        title.className = "acus-cleaner-title";
+        title.textContent = chat.title;
+
+        const detail = document.createElement("div");
+        detail.className = "acus-muted";
+        if (chat.protectedMatches.length) detail.textContent = `Protected: ${chat.protectedMatches.join(", ")}`;
+        else if (chat.matches.length) detail.textContent = `Suggested: ${chat.matches.join(", ")}`;
+        else detail.textContent = "No suggested filter match";
+
+        info.append(title, detail);
+        row.classList.toggle("acus-selected", checkbox.checked);
+        row.append(checkbox, info);
+        list.append(row);
+      }
+    };
+
+    function openFilterManager() {
+      const panel = document.createElement("div");
+      panel.innerHTML = `
+        <div class="acus-filter-section">
+          <strong>Suggested filters</strong>
+          <div class="acus-muted">Matching chats can be selected with Select suggested.</div>
+          <input class="acus-input acus-filter-suggested" value="${filters.suggested.join(", ")}">
+        </div>
+        <div class="acus-filter-section">
+          <strong>Protected filters</strong>
+          <div class="acus-muted">Matching chats stay out of suggested selections.</div>
+          <input class="acus-input acus-filter-protected" value="${filters.protected.join(", ")}">
+        </div>
+        <div class="acus-filter-actions">
+          <button class="acus-secondary acus-filter-reset">Reset defaults</button>
+          <button class="acus-primary acus-filter-save">Save filters</button>
+        </div>`;
+
+      const suggestedInput = panel.querySelector(".acus-filter-suggested");
+      const protectedInput = panel.querySelector(".acus-filter-protected");
+
+      panel.querySelector(".acus-filter-reset").onclick = () => {
+        suggestedInput.value = DEFAULT_CLEANER_FILTERS.suggested.join(", ");
+        protectedInput.value = DEFAULT_CLEANER_FILTERS.protected.join(", ");
+      };
+
+      panel.querySelector(".acus-filter-save").onclick = () => {
+        filters = {
+          suggested: cleanFilterList(suggestedInput.value.split(",")),
+          protected: cleanFilterList(protectedInput.value.split(","))
+        };
+        saveCleanerFilters(filters);
+        modal("Chat Cleaner", box);
+        render();
+        refreshControls();
+      };
+
+      modal("Manage Cleaner Filters", panel);
+    }
+
+    search.disabled = false;
+    selectSuggested.disabled = false;
+    selectAll.disabled = false;
+    deselectAll.disabled = false;
+    manageFilters.disabled = false;
+
+    search.oninput = render;
+
+    selectSuggested.onclick = () => {
+      selected.clear();
+      for (const chat of classified()) {
+        if (chat.suggested) selected.add(chat.href);
+      }
+      render();
+      refreshControls();
+    };
+
+    selectAll.onclick = () => {
+      for (const chat of visibleChats()) selected.add(chat.href);
+      render();
+      refreshControls();
+    };
+
+    deselectAll.onclick = () => {
+      selected.clear();
+      render();
+      refreshControls();
+    };
+
+    manageFilters.onclick = openFilterManager;
+
+    remove.onclick = async () => {
+      const chosen = chats.filter(chat => selected.has(chat.href));
+      if (!chosen.length) return;
+
+      const confirmed = confirm(`Delete ${chosen.length} selected ${platform()} chat${chosen.length === 1 ? "" : "s"}?\n\nThis cannot be undone.`);
+      if (!confirmed) return;
+
+      search.disabled = true;
+      selectSuggested.disabled = true;
+      selectAll.disabled = true;
+      deselectAll.disabled = true;
+      manageFilters.disabled = true;
+      remove.disabled = true;
+
+      let deleted = 0;
+      let failed = 0;
+      let lastError = "";
+
+      for (const chat of chosen) {
+        progress.textContent = `Deleting ${deleted + failed + 1} of ${chosen.length}: ${chat.title}`;
+
+        try {
+          await deleteChat(chat);
+          selected.delete(chat.href);
+          deleted++;
+        } catch (error) {
+          failed++;
+          lastError = error instanceof Error ? error.message : String(error);
+          console.error("[AI Client Utility Suite]", chat.title, error);
+        }
+      }
+
+      chats = cachedHistory ? [...cachedHistory.values()] : chats.filter(chat => selected.has(chat.href));
+
+      if (failed) {
+        progress.textContent = `${deleted} deleted, ${failed} failed. ${lastError}`;
+        progress.classList.add("acus-error");
+      } else {
+        progress.textContent = `${deleted} chat${deleted === 1 ? "" : "s"} deleted successfully.`;
+        progress.classList.remove("acus-error");
+      }
+
+      search.disabled = false;
+      selectSuggested.disabled = false;
+      selectAll.disabled = false;
+      deselectAll.disabled = false;
+      manageFilters.disabled = false;
+      render();
+      refreshControls();
+
+      for (const container of scrollContainersForChats()) container.scrollTop = 0;
+    };
+
+    render();
+    refreshControls();
+    search.focus();
+  }
+
   async function bulkArchive() {
     const box = document.createElement("div");
     box.innerHTML = `
@@ -810,7 +1163,7 @@
   function openMenu() {
     const box = document.createElement("div");
     box.className = "acus-menu";
-    [["🔎 Search Chats", searchChats], ["📦 Bulk Archive", bulkArchive], ["📚 Prompt Library", promptLibrary]].forEach(([label, fn]) => {
+    [["🔎 Search Chats", searchChats], ["📦 Bulk Archive", bulkArchive], ["🧹 Chat Cleaner", chatCleaner], ["📚 Prompt Library", promptLibrary]].forEach(([label, fn]) => {
       const b = document.createElement("button");
       b.className = "acus-menu-btn";
       b.textContent = label;
@@ -850,6 +1203,7 @@
       .acus-prompt{border-top:1px solid #333;padding:14px 0}.acus-prompt strong{display:block;margin-bottom:9px}.acus-prompt-actions{display:flex;gap:7px;margin-bottom:9px}
       .acus-library-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}.acus-library-status{color:#aaa}.acus-error{color:#ff8585}
       .acus-archive-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.acus-archive-toolbar button,.acus-archive-submit{background:#2b2b2b;color:#fff;border:1px solid #444;border-radius:10px;padding:8px 11px;cursor:pointer}.acus-archive-toolbar button:disabled,.acus-archive-submit:disabled{opacity:.5;cursor:not-allowed}.acus-archive-count{color:#aaa;margin-left:auto}.acus-archive-list{max-height:430px;overflow:auto;border:1px solid #333;border-radius:12px;padding:8px}.acus-archive-row{display:flex;align-items:center;gap:10px;padding:10px;border-radius:9px;cursor:pointer}.acus-archive-row:hover,.acus-archive-row.acus-selected{background:#2b2b2b}.acus-archive-row input{flex:0 0 auto}.acus-archive-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acus-archive-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.acus-archive-progress{color:#aaa;min-width:0}
+      .acus-cleaner-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.acus-cleaner-toolbar button,.acus-cleaner-delete,.acus-filter-actions button{background:#2b2b2b;color:#fff;border:1px solid #444;border-radius:10px;padding:8px 11px;cursor:pointer}.acus-cleaner-toolbar button:disabled,.acus-cleaner-delete:disabled{opacity:.5;cursor:not-allowed}.acus-cleaner-count{color:#aaa;margin-left:auto}.acus-cleaner-list{max-height:430px;overflow:auto;border:1px solid #333;border-radius:12px;padding:8px}.acus-cleaner-row{display:flex;align-items:flex-start;gap:10px;padding:10px;border-radius:9px;cursor:pointer}.acus-cleaner-row:hover,.acus-cleaner-row.acus-selected{background:#2b2b2b}.acus-cleaner-info{min-width:0}.acus-cleaner-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acus-cleaner-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.acus-cleaner-progress{color:#aaa;min-width:0}.acus-filter-section{margin-bottom:16px}.acus-filter-actions{display:flex;justify-content:flex-end;gap:8px}
     `;
     document.head.append(style);
 
