@@ -10,9 +10,56 @@ const context = vm.createContext({
   document: {}, console,
 });
 vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) +
-  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats }; })();', context);
+  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains }; })();', context);
 const h = context.helpers;
 const day = value => h.parseDateInput(value);
+
+test('native action discovery excludes both suite overlays', () => {
+  const modalButton = {};
+  const cleanerButton = {};
+  context.document.getElementById = id => ({ contains: element =>
+    id === 'vanick-cleaner-overlay' ? element === cleanerButton : element === modalButton });
+  assert.equal(h.utilityContains(modalButton), true);
+  assert.equal(h.utilityContains(cleanerButton), true);
+  assert.equal(h.utilityContains({}), false);
+  delete context.document.getElementById;
+});
+
+test('title search combines with selection and protection filters', () => {
+  const chat = { title: 'Project NOTES', protectedMatches: ['project'], likelyPersonal: false };
+  assert.equal(h.chatMatchesView(chat, false, ' notes ', 'all'), true);
+  assert.equal(h.chatMatchesView(chat, false, 'notes', 'selected'), false);
+  assert.equal(h.chatMatchesView(chat, true, 'notes', 'selected'), true);
+  assert.equal(h.chatMatchesView(chat, true, 'notes', 'unprotected'), false);
+  assert.equal(h.chatMatchesView(chat, true, 'other', 'all'), false);
+  assert.equal(h.chatMatchesView({ title: 'Notes', likelyPersonal: true }, false, '', 'suggested'), true);
+});
+
+test('cleanup awaits the current chat before stopping and preserves remaining items', async () => {
+  const calls = [];
+  let stopped = false;
+  const result = await h.runChatBatch([1, 2, 3], async item => {
+    calls.push(item);
+    await Promise.resolve();
+    stopped = true;
+  }, () => stopped, () => {});
+  assert.deepEqual(calls, [1]);
+  assert.equal(result.completed[0], 1);
+  assert.equal(result.pending.join(','), '2,3');
+});
+
+test('cleanup reports each failure and retry excludes successful and pending items', async () => {
+  const result = await h.runChatBatch([1, 2, 3], async item => {
+    if (item === 2) throw new Error('Timed out');
+  }, () => false, () => {});
+  assert.equal(result.completed.join(','), '1,3');
+  assert.equal(result.failed.length, 1);
+  assert.match(result.failed[0].message, /Timed out/);
+  const calls = [];
+  const retry = await h.runChatBatch(result.failed.map(failure => failure.item), async item => calls.push(item), () => false, () => {});
+  assert.deepEqual(calls, [2]);
+  assert.equal(retry.failed.length, 0);
+});
 
 test('display sorting preserves chat numbers and numeric range membership', () => {
   const chats = h.numberChats([{ href: '/c/new' }, { href: '/c/middle' }, { href: '/c/old' }]);

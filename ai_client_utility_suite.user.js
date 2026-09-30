@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.5.9
+// @version      0.6.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -439,7 +439,8 @@
   }
 
   function utilityContains(element) {
-    return Boolean(document.getElementById(APP_ID + "-modal")?.contains(element));
+    return Boolean(document.getElementById(APP_ID + "-modal")?.contains(element) ||
+      document.getElementById('vanick-cleaner-overlay')?.contains(element));
   }
 
   function rowCandidates(link) {
@@ -714,6 +715,7 @@
   }
 
   async function deleteChat(chat) {
+    if (confirmationDeleteAction()) throw new Error('Close the existing delete confirmation before retrying.');
     await openChatMenu(chat);
 
     const deleteAction = await waitFor(menuDeleteAction, 3000, 80);
@@ -1119,6 +1121,33 @@
     return [...chats].sort((a, b) => order === 'oldest' ? a.chatNumber - b.chatNumber : b.chatNumber - a.chatNumber);
   }
 
+  function chatMatchesView(chat, selected, query, view) {
+    if (!String(chat.title || '').toLowerCase().includes(query.trim().toLowerCase())) return false;
+    if (view === 'selected') return selected;
+    if (view === 'unprotected') return !chat.protectedMatches?.length;
+    if (view === 'suggested') return !!chat.likelyPersonal;
+    return true;
+  }
+
+  async function runChatBatch(items, action, isStopped, onProgress) {
+    const result = { completed: [], failed: [], pending: [] };
+    for (let index = 0; index < items.length; index++) {
+      if (isStopped()) {
+        result.pending = items.slice(index);
+        break;
+      }
+      const item = items[index];
+      onProgress(index, items.length, item);
+      try {
+        await action(item);
+        result.completed.push(item);
+      } catch (error) {
+        result.failed.push({ item, message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return result;
+  }
+
   function makeOverlay(chats, selectedHrefs = new Set()) {
     chats = numberChats(chats);
     document.getElementById('vanick-cleaner-overlay')?.remove();
@@ -1216,7 +1245,7 @@
       #vanick-cleaner-overlay .vc-chip-remove:hover{color:var(--vc-danger);background:var(--vc-danger-soft)}
       #vanick-cleaner-overlay .vc-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 20px 16px;border-top:1px solid var(--vc-border);background:var(--vc-panel)}
       #vanick-cleaner-overlay .vc-status{flex:1 1 300px;min-height:18px;color:var(--vc-muted);font-size:11.5px;line-height:1.45}
-      #vanick-cleaner-overlay .vc-status[data-state="error"]{color:var(--vc-danger)}
+      #vanick-cleaner-overlay .vc-status[data-state="error"]{color:var(--vc-text);font-weight:700}
       #vanick-cleaner-overlay .vc-status[data-state="success"]{color:var(--vc-success)}
       #vanick-cleaner-overlay .vc-footer-actions{display:flex;gap:8px;margin-left:auto}
       #vanick-cleaner-overlay .vc-button{min-height:34px;padding:7px 11px;border-radius:9px;border:1px solid var(--vc-border);color:var(--vc-text);background:var(--vc-surface);font:inherit;font-size:11.5px;line-height:1;font-weight:700;cursor:pointer;transition:background .15s ease,border-color .15s ease,transform .1s ease,opacity .15s ease}
@@ -1254,7 +1283,8 @@
       #vanick-cleaner-overlay .vc-toolbar-actions{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:8px;margin-top:8px}
       #vanick-cleaner-overlay .vc-action-group{gap:6px}
       #vanick-cleaner-overlay .vc-action-group .vc-button{padding:8px 10px;font-size:12px;min-height:38px}
-      @media(max-width:640px),(max-height:650px){#vanick-cleaner-overlay .vc-panel{overflow:auto;max-height:calc(100vh - 20px)}#vanick-cleaner-overlay .vc-toolbar-actions{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-date-controls>.vc-button{grid-column:1/-1}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{flex:none;max-height:320px;overflow:auto}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}}
+      @media(max-width:640px),(max-height:800px){#vanick-cleaner-overlay .vc-panel{overflow:auto;max-height:calc(100vh - 48px)}#vanick-cleaner-overlay .vc-header{position:sticky;top:0;z-index:2;background:var(--vc-panel)}#vanick-cleaner-overlay .vc-footer{position:sticky;bottom:0;z-index:2}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{flex:none;max-height:320px;overflow:auto}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}}
+      @media(max-width:640px){#vanick-cleaner-overlay .vc-toolbar-actions{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-date-controls>.vc-button{grid-column:1/-1}#vanick-cleaner-overlay .vc-footer-actions{flex-wrap:wrap}}
       @media (max-width:640px){#vanick-cleaner-overlay{padding:10px}#vanick-cleaner-overlay .vc-date-controls{grid-template-columns:1fr 1fr}#vanick-cleaner-overlay .vc-panel{max-height:92vh;border-radius:16px}#vanick-cleaner-overlay .vc-header{padding:18px 16px 14px}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{padding:10px}#vanick-cleaner-overlay .vc-filter-grid{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-footer{padding:12px}#vanick-cleaner-overlay .vc-chat-head{align-items:flex-start}#vanick-cleaner-overlay .vc-chat-title{white-space:normal}}
     `;
     overlay.appendChild(style);
@@ -1335,11 +1365,63 @@
     let footer = null;
     let filterMode = false;
     let selectionMode = false;
+    let running = false;
+    let stopRequested = false;
+    let failedItems = [];
+
+    const viewControls = document.createElement('div');
+    viewControls.className = 'vc-toolbar';
+    const titleSearch = document.createElement('input');
+    titleSearch.type = 'search';
+    titleSearch.className = 'vc-input';
+    titleSearch.placeholder = 'Search loaded chat titles';
+    titleSearch.setAttribute('aria-label', 'Search cleaner chats');
+    const viewFilter = document.createElement('select');
+    viewFilter.className = 'vc-input';
+    viewFilter.setAttribute('aria-label', 'Show chats');
+    for (const [value, label] of [['all', 'All chats'], ['selected', 'Selected only'], ['unprotected', 'Hide protected'], ['suggested', 'Suggested only']]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      viewFilter.append(option);
+    }
+    const viewCount = document.createElement('span');
+    viewCount.className = 'vc-subtitle';
+    viewCount.setAttribute('aria-live', 'polite');
+    const viewEmpty = document.createElement('div');
+    viewEmpty.className = 'vc-empty';
+    viewEmpty.textContent = 'No chats match. Clear the search or change the filter.';
+    viewEmpty.hidden = true;
+    const searchField = document.createElement('label');
+    searchField.className = 'vc-field';
+    searchField.style.flex = '1';
+    searchField.textContent = 'Search titles';
+    searchField.append(titleSearch);
+    const viewField = document.createElement('label');
+    viewField.className = 'vc-field';
+    viewField.textContent = 'Show chats';
+    viewField.append(viewFilter);
+    viewControls.append(searchField, viewField, viewCount);
+
+    function refreshView() {
+      let shown = 0;
+      for (const item of rows) {
+        const matches = !item.deleted && chatMatchesView(item.chat, item.checkbox.checked, titleSearch.value, viewFilter.value);
+        item.row.hidden = !matches;
+        if (matches) shown++;
+      }
+      const hiddenSelected = rows.filter(item => !item.deleted && item.row.hidden && item.checkbox.checked).length;
+      viewCount.textContent = `${shown} shown${hiddenSelected ? ` · ${hiddenSelected} selected outside this view` : ''}`;
+      viewEmpty.hidden = shown > 0 || !chats.length;
+    }
+    titleSearch.oninput = refreshView;
+    viewFilter.onchange = refreshView;
 
     function refreshSelection() {
       updateBackLabel();
+      refreshView();
       const selected = rows.filter(item => item.checkbox.checked).length;
-      summary.textContent = filterMode ? `${activeFilters.suggested.length} suggested filters · ${activeFilters.protected.length} protected filters` : `${chats.length} loaded · ${selected} selected`;
+      summary.textContent = filterMode ? `${activeFilters.suggested.length} suggested filters · ${activeFilters.protected.length} protected filters` : `${rows.filter(item => !item.deleted).length} loaded · ${selected} selected`;
       for (const item of rows) item.row.classList.toggle('vc-selected', item.checkbox.checked);
       if (remove) {
         remove.textContent = selected ? `Delete selected (${selected})` : 'Delete selected';
@@ -1349,6 +1431,7 @@
         reviewSelected.textContent = selected ? `Review selected (${selected})` : 'Review selected';
         reviewSelected.disabled = selected === 0;
       }
+      retry.disabled = !failedItems.some(item => !item.deleted && item.checkbox.checked);
     }
 
     for (const chat of displayChats()) {
@@ -1391,6 +1474,7 @@
     }
 
     listWrap.appendChild(list);
+    listWrap.append(viewEmpty);
 
     const reviewSelected = button('Review selected', 'accent');
 
@@ -1446,6 +1530,7 @@
       filterManager.hidden = true;
       selectionReview.hidden = true;
       listWrap.hidden = false;
+      viewControls.hidden = false;
       if (footer) footer.hidden = false;
       selectSuggested.hidden = false;
       selectAll.hidden = false;
@@ -1460,6 +1545,7 @@
       selectionMode = true;
       filterManager.hidden = true;
       listWrap.hidden = true;
+      viewControls.hidden = true;
       selectionReview.hidden = false;
       if (footer) footer.hidden = false;
       selectSuggested.hidden = true;
@@ -1484,20 +1570,20 @@
 
     const selectSuggested = button('Select suggested chats', 'secondary');
     selectSuggested.onclick = () => {
-      rows.forEach(item => { item.checkbox.checked = item.chat.likelyPersonal; });
+      rows.forEach(item => { item.checkbox.checked = !item.deleted && item.chat.likelyPersonal; });
       refreshSelection();
       if (rows.some(item => item.checkbox.checked)) showSelectedReview();
     };
 
-    const selectAll = button('Select all', 'secondary');
+    const selectAll = button('Select shown', 'secondary');
     selectAll.onclick = () => {
-      rows.forEach(item => { item.checkbox.checked = true; });
+      rows.forEach(item => { if (!item.row.hidden && !item.deleted) item.checkbox.checked = true; });
       refreshSelection();
     };
 
-    const deselectAll = button('Deselect all', 'secondary');
+    const deselectAll = button('Deselect shown', 'secondary');
     deselectAll.onclick = () => {
-      rows.forEach(item => { item.checkbox.checked = false; });
+      rows.forEach(item => { if (!item.row.hidden) item.checkbox.checked = false; });
       refreshSelection();
     };
 
@@ -1630,6 +1716,7 @@
       filterManager.hidden = !filterMode;
       selectionReview.hidden = true;
       listWrap.hidden = filterMode;
+      viewControls.hidden = filterMode;
       if (footer) footer.hidden = filterMode;
       selectSuggested.hidden = filterMode;
       selectAll.hidden = filterMode;
@@ -1673,7 +1760,7 @@
       const range = parseNumberRange(fromNumber.value, toNumber.value, chats.length);
       if (!range) return;
       rows.forEach(item => {
-        item.checkbox.checked = chatMatchesNumberRange(item.chat, range);
+        item.checkbox.checked = !item.deleted && chatMatchesNumberRange(item.chat, range);
       });
       refreshSelection();
       if (selectionMode) renderSelectedReview();
@@ -1739,13 +1826,14 @@
     sortBar.append(sortLabel, sortSelect);
     panel.append(sortBar);
     panel.append(numberControls);
-    panel.append(toolbar, listWrap, filterManager, selectionReview);
+    panel.append(toolbar, viewControls, listWrap, filterManager, selectionReview);
 
     footer = document.createElement('div');
     footer.className = 'vc-footer';
 
     const status = document.createElement('div');
     status.className = 'vc-status';
+    status.setAttribute('role', 'status');
     status.textContent = 'Nothing is deleted until you confirm.';
 
     const footerActions = document.createElement('div');
@@ -1754,9 +1842,31 @@
     const close = button('Cancel', 'secondary');
     close.onclick = () => overlay.remove();
 
+    const stop = button('Stop after current chat', 'secondary');
+    stop.hidden = true;
+    stop.onclick = () => {
+      stopRequested = true;
+      stop.disabled = true;
+      status.textContent = 'Stopping after the current chat finishes. Remaining chats will stay selected.';
+    };
+    const retry = button('Retry failed', 'accent');
+    retry.hidden = true;
+    const failureList = document.createElement('div');
+    failureList.className = 'vc-detail';
+    failureList.style.cssText = 'max-height:90px;overflow:auto;white-space:pre-wrap';
+    failureList.hidden = true;
+    const progress = document.createElement('progress');
+    progress.setAttribute('aria-label', 'Cleanup progress');
+    progress.style.cssText = 'width:100%;accent-color:var(--vc-accent)';
+    progress.hidden = true;
+    const statusBlock = document.createElement('div');
+    statusBlock.style.cssText = 'flex:1;min-width:0';
+    statusBlock.append(status, progress, failureList);
+
     remove = button('Delete selected', 'danger');
-    remove.onclick = async () => {
-      const selected = rows.filter(item => item.checkbox.checked);
+    async function deleteSelection(selected) {
+      if (running) return;
+      selected = selected.filter(item => !item.deleted);
       if (!selected.length) {
         status.dataset.state = 'error';
         status.textContent = 'Nothing selected.';
@@ -1766,50 +1876,67 @@
       const confirmed = confirm(`Delete ${selected.length} selected ${current} chat(s)?\n\nThis cannot be undone.`);
       if (!confirmed) return;
 
-      const controls = [remove, close, closeIcon, backIcon, sortSelect, manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, fromNumber, toNumber, selectNumberRange, refreshHistory];
+      running = true;
+      overlay.dataset.running = 'true';
+      stopRequested = false;
+      stop.hidden = false;
+      stop.disabled = false;
+      retry.hidden = true;
+      failureList.hidden = true;
+      progress.hidden = false;
+      progress.max = selected.length;
+      progress.value = 0;
+      const controls = [...panel.querySelectorAll('button,input,select')].filter(control => control !== stop);
+      const previousDisabled = controls.map(control => control.disabled);
       for (const control of controls) control.disabled = true;
-
-      let deleted = 0;
-      let failed = 0;
-      let lastError = '';
-
       status.dataset.state = '';
-      for (const item of selected) {
-        status.textContent = `Deleting ${deleted + failed + 1} of ${selected.length} · ${item.chat.title}`;
-        try {
-          await deleteChat(item.chat);
-          forgetChat(item.chat.href);
-          deleted++;
-          item.row.style.opacity = '.38';
-          item.checkbox.checked = false;
-        } catch (error) {
-          failed++;
-          lastError = error instanceof Error ? error.message : String(error);
-          item.row.style.borderColor = 'var(--vc-danger)';
-          console.error('[Chat Cleaner]', item.chat.title, error);
-        }
+      const result = await runChatBatch(selected, async item => {
+        await deleteChat(item.chat);
+        forgetChat(item.chat.href);
+        item.deleted = true;
+        item.checkbox.checked = false;
+      }, () => stopRequested, (index, total, item) => {
+        progress.value = index;
+        status.textContent = `${index} of ${total} processed · Deleting ${item.chat.title}`;
+      });
+      progress.value = result.completed.length + result.failed.length;
+      failedItems = result.failed.map(failure => failure.item);
+      failureList.replaceChildren();
+      for (const failure of result.failed) {
+        failure.item.row.style.borderColor = 'var(--vc-danger)';
+        const detail = document.createElement('div');
+        detail.textContent = `${failure.item.chat.title}: ${failure.message}`;
+        failureList.append(detail);
       }
-
-      if (failed) {
+      failureList.hidden = !result.failed.length;
+      retry.hidden = !result.failed.length;
+      const counts = `${result.completed.length} deleted · ${result.failed.length} failed · ${result.pending.length} remaining`;
+      if (result.failed.length) {
         status.dataset.state = 'error';
-        status.textContent = `${deleted} deleted · ${failed} failed · ${lastError}`;
+        status.textContent = counts;
       } else {
         status.dataset.state = 'success';
-        status.textContent = `${deleted} chat${deleted === 1 ? '' : 's'} deleted successfully.`;
+        status.textContent = result.pending.length ? `Stopped. ${counts}` : counts;
       }
-
-      for (const control of controls) control.disabled = false;
+      running = false;
+      delete overlay.dataset.running;
+      stop.hidden = true;
+      controls.forEach((control, index) => { control.disabled = previousDisabled[index]; });
+      retry.disabled = false;
       refreshNumberRange();
       refreshSelection();
-    };
+      if (selectionMode) renderSelectedReview();
+    }
+    remove.onclick = () => deleteSelection(rows.filter(item => item.checkbox.checked));
+    retry.onclick = () => deleteSelection(failedItems.filter(item => item.checkbox.checked));
 
-    footerActions.append(close, remove);
-    footer.append(status, footerActions);
+    footerActions.append(stop, retry, close, remove);
+    footer.append(statusBlock, footerActions);
     panel.appendChild(footer);
 
     overlay.appendChild(panel);
     overlay.addEventListener('click', event => {
-      if (event.target === overlay) overlay.remove();
+      if (event.target === overlay && !running) overlay.remove();
     });
 
     document.body.appendChild(overlay);
@@ -2027,6 +2154,7 @@
   }
 
   function openMenu() {
+    if (document.getElementById('vanick-cleaner-overlay')?.dataset.running === 'true') return;
     const box = document.createElement("div");
     box.className = "acus-menu";
     [["🔎 Search Chats", searchChats, 'Find conversations by title'], ["📦 Bulk Archive", bulkArchive, 'Move selected chats out of your sidebar'], ["🧹 Chat Cleaner", () => chatCleaner(false), 'Select numbered chats and review before deleting'], ["📚 Prompt Library", promptLibrary, 'Save, reuse, and back up your prompts']].forEach(([label, fn, description]) => {

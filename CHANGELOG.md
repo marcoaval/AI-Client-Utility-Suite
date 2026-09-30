@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+- Search loaded chat titles inside Chat Cleaner and combine searches with selected, suggested, or unprotected views.
+- Select or deselect only shown chats while preserving selections hidden by search and filters.
+- Cleanup progress, a stop control that finishes the current chat before stopping, and individual failure details.
+- Retry failed deletions after confirmation without repeating successful deletions. Unprocessed chats remain selected.
+
+### Improved
+- Deleted chats leave the cleaner list and cannot be selected again in the current view.
+- Navigation and selection stay locked during cleanup so the active batch remains visible.
+
+### Community
+- Thanks to @sam-cre for the chat organization feedback in issue #5. Search and view filters extend that organization workflow.
+
 ## 0.5.9
 
 ### Improved

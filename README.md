@@ -10,6 +10,10 @@ Search across the full chat history by automatically loading older sidebar entri
 ### Chat Cleaner
 Review the full chat history, use suggested and protected title filters, manually select conversations, and delete selected chats only after confirmation.
 
+Search loaded titles and use **Show chats** to view all chats, selected chats, suggested chats, or hide protected chats. **Select shown** and **Deselect shown** affect only the visible list. Hidden selections remain selected and appear in **Review selected** before deletion.
+
+Cleanup displays progress and failure details. **Stop after current chat** lets the current deletion finish and leaves unprocessed chats selected. **Retry failed** asks for confirmation and retries only failed chats that remain selected. Uncheck any chat you want to keep. Successful deletions are removed from the list. A failed attempt may already have reached the site's confirmation step, so check the failure details and remaining sidebar chats before retrying.
+
 ### Cached history and dates
 Click **AI Tools** to open the tools menu directly. History is loaded through the sidebar and cached for later use. The suite does not open or index ChatGPT's native Search chats.
 
@@ -61,7 +65,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Early development. Version 0.5.9 combines sidebar search, cached history, numbered range selection and sorting, bulk archiving, Chat Cleaner, and the shared Prompt Library with clearer controls and stronger visual contrast.
+Early development. Version 0.6.0 adds cleaner search, view filters, cleanup progress, cancellation between chats, and failed deletion retries alongside sidebar search, numbered ranges, bulk archiving, and the shared Prompt Library.
 
 ## Privacy
 
