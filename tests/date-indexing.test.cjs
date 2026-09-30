@@ -10,9 +10,41 @@ const context = vm.createContext({
   document: {}, console,
 });
 vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) +
-  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats }; })();', context);
+  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange }; })();', context);
 const h = context.helpers;
 const day = value => h.parseDateInput(value);
+
+test('numbers begin at one at the oldest end of indexed sidebar order', () => {
+  const input = [{ href: '/c/new', title: 'New' }, { href: '/c/middle' }, { href: '/c/old' }];
+  const numbered = h.numberChats(input);
+  assert.equal(numbered[0].href, '/c/old');
+  assert.equal(numbered[0].chatNumber, 1);
+  assert.equal(numbered[2].href, '/c/new');
+  assert.equal(numbered[2].chatNumber, 3);
+  assert.equal(input[0].href, '/c/new');
+  assert.equal(input[0].chatNumber, undefined);
+  assert.equal(h.numberChats([...input, input[0]]).length, 3);
+  assert.equal(h.numberChats([]).length, 0);
+});
+
+test('number ranges validate both bounds and accept reversed inclusive limits', () => {
+  const range = h.parseNumberRange('3', '1', 3);
+  assert.equal(range.start, 1);
+  assert.equal(range.end, 3);
+  for (const [from, to] of [['', '2'], ['0', '2'], ['1', '4'], ['1.5', '2'], ['-1', '2'], ['1e1', '2']]) {
+    assert.equal(h.parseNumberRange(from, to, 3), null);
+  }
+  assert.equal(h.parseNumberRange('1', '1', 0), null);
+});
+
+test('number selection includes endpoints, works without dates, and skips protected chats', () => {
+  const range = h.parseNumberRange('2', '4', 5);
+  assert.equal(h.chatMatchesNumberRange({ chatNumber: 2, dateLabel: 'Unknown date' }, range), true);
+  assert.equal(h.chatMatchesNumberRange({ chatNumber: 4 }, range), true);
+  assert.equal(h.chatMatchesNumberRange({ chatNumber: 1 }, range), false);
+  assert.equal(h.chatMatchesNumberRange({ chatNumber: 3, protectedMatches: ['school'] }, range), false);
+  assert.equal(h.chatMatchesNumberRange({ chatNumber: 3 }, null), false);
+});
 
 
 test('invalid and absent exposed dates remain unknown', () => {

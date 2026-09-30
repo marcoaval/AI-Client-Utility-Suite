@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.5.6
+// @version      0.5.7
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -332,6 +332,7 @@
     }
 
     await sleep(180);
+    collected.clear();
     mergeChats(collected, getChatLinks());
 
     let stablePasses = 0;
@@ -406,6 +407,10 @@
   function rememberChats(chats) {
     if (!cachedHistory) cachedHistory = new Map();
     mergeChats(cachedHistory, chats);
+    const ordered = new Map();
+    for (const chat of chats) ordered.set(chat.href, cachedHistory.get(chat.href));
+    for (const [href, chat] of cachedHistory) if (!ordered.has(href)) ordered.set(href, chat);
+    cachedHistory = ordered;
     savePersistentChatCache();
     return [...cachedHistory.values()];
   }
@@ -1087,7 +1092,25 @@
     return range.end <= cutoff;
   }
 
+  function numberChats(chats) {
+    const unique = [...new Map(chats.map(chat => [chat.href, chat])).values()];
+    return unique.reverse().map((chat, index) => ({ ...chat, chatNumber: index + 1 }));
+  }
+
+  function parseNumberRange(from, to, total) {
+    if (!/^\d+$/.test(String(from)) || !/^\d+$/.test(String(to))) return null;
+    const first = Number(from);
+    const last = Number(to);
+    if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || first < 1 || last < 1 || first > total || last > total) return null;
+    return { start: Math.min(first, last), end: Math.max(first, last) };
+  }
+
+  function chatMatchesNumberRange(chat, range) {
+    return Boolean(range && !chat.protectedMatches?.length && chat.chatNumber >= range.start && chat.chatNumber <= range.end);
+  }
+
   function makeOverlay(chats) {
+    chats = numberChats(chats);
     document.getElementById('vanick-cleaner-overlay')?.remove();
 
     const current = platform();
@@ -1140,7 +1163,7 @@
       #vanick-cleaner-overlay .vc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 24px;border-bottom:1px solid var(--vc-border);background:var(--vc-panel)}
       #vanick-cleaner-overlay .vc-summary{color:var(--vc-muted);font-size:12px;font-weight:650}
       #vanick-cleaner-overlay .vc-toolbar-actions{display:flex;gap:7px;flex-wrap:wrap}
-      #vanick-cleaner-overlay .vc-date-controls{display:grid;grid-template-columns:minmax(125px,1fr) minmax(125px,1fr) auto minmax(125px,1fr) auto;gap:7px;align-items:center;padding:10px 24px;border-bottom:1px solid var(--vc-border);background:var(--vc-panel)}
+      #vanick-cleaner-overlay .vc-date-controls{display:grid;grid-template-columns:minmax(100px,1fr) minmax(100px,1fr) auto;gap:7px;align-items:center;padding:10px 24px;border-bottom:1px solid var(--vc-border);background:var(--vc-panel)}
       #vanick-cleaner-overlay .vc-date-controls .vc-input{width:100%}
       #vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{min-height:120px;overflow:auto;padding:14px 16px 16px;scrollbar-color:var(--vc-border-strong) transparent}
       #vanick-cleaner-overlay .vc-list{display:grid;gap:8px}
@@ -1289,12 +1312,12 @@
       const savedDate = chat.dateStart && chat.dateEnd
         ? (chat.dateStart === chat.dateEnd ? chat.dateStart : `${chat.dateStart} to ${chat.dateEnd}`)
         : (chat.dateLabel || 'Unknown date');
-      detailParts.push(`Date: ${savedDate}`);
+      if (savedDate !== 'Unknown date') detailParts.push(`Date: ${savedDate}`);
 
       const statusClass = chat.protectedMatches.length ? 'vc-pill-protected' : chat.likelyPersonal ? 'vc-pill-personal' : 'vc-pill-review';
       const statusText = chat.protectedMatches.length ? 'Protected' : chat.likelyPersonal ? 'Suggested' : 'Review';
 
-      info.innerHTML = `<div class="vc-chat-head"><div class="vc-chat-title">${escapeHtml(chat.title)}</div><span class="vc-pill ${statusClass}">${statusText}</span></div><div class="vc-detail">${escapeHtml(detailParts.join(' · '))}</div>`;
+      info.innerHTML = `<div class="vc-chat-head"><div class="vc-chat-title">#${chat.chatNumber} · ${escapeHtml(chat.title)}</div><span class="vc-pill ${statusClass}">${statusText}</span></div><div class="vc-detail">${escapeHtml(detailParts.join(' · '))}</div>`;
 
       row.append(checkbox, info);
       list.appendChild(row);
@@ -1348,7 +1371,7 @@
 
         const info = document.createElement('div');
         info.style.minWidth = '0';
-        info.innerHTML = `<div class="vc-chat-head"><div class="vc-chat-title">${escapeHtml(item.chat.title)}</div><span class="vc-pill vc-pill-personal">Selected</span></div>`;
+        info.innerHTML = `<div class="vc-chat-head"><div class="vc-chat-title">#${item.chat.chatNumber} · ${escapeHtml(item.chat.title)}</div><span class="vc-pill vc-pill-personal">Selected</span></div>`;
 
         row.append(checkbox, info);
         selectedList.appendChild(row);
@@ -1563,49 +1586,43 @@
       refreshSelection();
     };
 
-    const dateControls = document.createElement('div');
-    dateControls.className = 'vc-date-controls';
-
-    const fromDate = document.createElement('input');
-    fromDate.type = 'date';
-    fromDate.className = 'vc-input';
-    fromDate.title = 'Start date';
-
-    const toDate = document.createElement('input');
-    toDate.type = 'date';
-    toDate.className = 'vc-input';
-    toDate.title = 'End date';
-
-    const selectRange = button('Select range', 'secondary');
-    selectRange.onclick = () => {
-      const start = parseDateInput(fromDate.value);
-      const end = parseDateInput(toDate.value);
-      if (!start || !end) return;
-
-      const lower = start <= end ? start : end;
-      const upper = start <= end ? end : start;
-
+    const numberControls = document.createElement('div');
+    numberControls.className = 'vc-date-controls';
+    const fromNumber = document.createElement('input');
+    const toNumber = document.createElement('input');
+    for (const input of [fromNumber, toNumber]) {
+      input.type = 'number';
+      input.min = '1';
+      input.max = String(chats.length);
+      input.step = '1';
+      input.className = 'vc-input';
+      input.disabled = !chats.length;
+    }
+    fromNumber.placeholder = 'From chat #';
+    fromNumber.setAttribute('aria-label', 'From chat number');
+    toNumber.placeholder = 'To chat #';
+    toNumber.setAttribute('aria-label', 'To chat number');
+    const selectNumberRange = button('Select number range', 'secondary');
+    selectNumberRange.disabled = true;
+    const refreshNumberRange = () => {
+      selectNumberRange.disabled = !parseNumberRange(fromNumber.value, toNumber.value, chats.length);
+    };
+    fromNumber.oninput = refreshNumberRange;
+    toNumber.oninput = refreshNumberRange;
+    selectNumberRange.onclick = () => {
+      const range = parseNumberRange(fromNumber.value, toNumber.value, chats.length);
+      if (!range) return;
       rows.forEach(item => {
-        item.checkbox.checked = chatMatchesDateRange(item.chat, lower, upper);
+        item.checkbox.checked = chatMatchesNumberRange(item.chat, range);
       });
       refreshSelection();
+      if (selectionMode) renderSelectedReview();
     };
-
-    const beforeDate = document.createElement('input');
-    beforeDate.type = 'date';
-    beforeDate.className = 'vc-input';
-    beforeDate.title = 'Select chats on or before this date';
-
-    const selectBefore = button('Select before', 'secondary');
-    selectBefore.onclick = () => {
-      const cutoff = parseDateInput(beforeDate.value);
-      if (!cutoff) return;
-
-      rows.forEach(item => {
-        item.checkbox.checked = chatIsBeforeDate(item.chat, cutoff);
-      });
-      refreshSelection();
-    };
+    const numberHint = document.createElement('div');
+    numberHint.className = 'vc-subtitle';
+    numberHint.style.cssText = 'grid-column:1/-1;max-width:none';
+    numberHint.textContent = 'Numbers follow sidebar order, oldest listed first. Refreshing history can change numbers. Range selection skips protected chats.';
+    numberControls.append(fromNumber, toNumber, selectNumberRange, numberHint);
 
     const refreshHistory = button('Refresh history', 'secondary');
     refreshHistory.onclick = async () => {
@@ -1614,10 +1631,9 @@
       await chatCleaner(true);
     };
 
-    dateControls.append(fromDate, toDate, selectRange, beforeDate, selectBefore);
     toolbarActions.append(manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, refreshHistory);
     toolbar.append(summary, toolbarActions);
-    panel.append(dateControls);
+    panel.append(numberControls);
     panel.append(toolbar, listWrap, filterManager, selectionReview);
 
     footer = document.createElement('div');
@@ -1645,7 +1661,7 @@
       const confirmed = confirm(`Delete ${selected.length} selected ${current} chat(s)?\n\nThis cannot be undone.`);
       if (!confirmed) return;
 
-      const controls = [remove, close, manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll];
+      const controls = [remove, close, closeIcon, manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, fromNumber, toNumber, selectNumberRange, refreshHistory];
       for (const control of controls) control.disabled = true;
 
       let deleted = 0;
@@ -1678,6 +1694,7 @@
       }
 
       for (const control of controls) control.disabled = false;
+      refreshNumberRange();
       refreshSelection();
     };
 

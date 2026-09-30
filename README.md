@@ -13,7 +13,9 @@ Review the full chat history, use suggested and protected title filters, manuall
 ### Cached history and dates
 Click **AI Tools** to open the tools menu directly. History is loaded through the sidebar and cached for later use. The suite does not open or index ChatGPT's native Search chats.
 
-Dates are saved when sidebar entries expose a `time` element or a date group. Missing dates remain **Unknown date**. Relative date groups are saved as calendar ranges when indexed so their dates do not drift as the cache ages. Date selection includes a grouped chat only when its whole known range fits inside the chosen range. Use **Refresh history** to rebuild the cache from the sidebar.
+Chat Cleaner numbers the indexed chats **#1 through #N**, starting at the oldest end of the indexed sidebar list. Enter **From chat number** and **To chat number**, then click **Select number range** to select an inclusive range, such as 1–50. Protected chats are skipped; individual checkboxes remain available. Review the selection before confirming deletion.
+
+Numbers describe indexed sidebar positions, not verified creation dates. ChatGPT can reorder chats by recent activity. Numbers may change when history is refreshed, chats are added, or chats are removed. Use **Refresh history** to rebuild the list from the sidebar before choosing a range. Known dates remain visible as optional information; unknown-date labels are hidden.
 
 ### Prompt Library
 Save reusable prompts in Tampermonkey storage so the same library is available on both ChatGPT and Claude. Prompts can also be exported to and imported from a JSON backup.
@@ -55,7 +57,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Early development. Version 0.5.6 combines sidebar search, cached history and date selection, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
+Early development. Version 0.5.7 combines sidebar search, cached history and numbered range selection, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
 
 ## Privacy
 

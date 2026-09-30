@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.7
+
+### Added
+- Number indexed chats from #1 at the oldest end of sidebar order through #N at the newest end.
+- Replace date selection controls with From chat number, To chat number, and inclusive Select number range controls. Invalid ranges stay disabled and protected chats are skipped.
+- Show numbers in both the chat list and selected-chat review; hide Unknown date labels.
+
+### Improved
+- Keep fresh sidebar observations in sidebar order when updating cached history, and start full scans at the top before assigning positions.
+- Explain that sidebar position is not a verified creation date and numbers may change when the index is rebuilt.
+
 ## 0.5.6
 
 ### Removed
