@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+- Added a working Bulk Archive tool for ChatGPT and Claude.
+- Loads the full chat history before showing archive options.
+- Lets users filter chat titles, select visible results, deselect everything, and review selections before archiving.
+- Requires confirmation before any archive action starts.
+- Shows archive progress and reports failures without stopping the full batch.
+- Returns the sidebar to recent chats after the archive process finishes.
+
 ## 0.2.1
 
 ### Improved
