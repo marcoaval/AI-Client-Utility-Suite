@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.5.7
+// @version      0.5.8
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -19,6 +19,7 @@
   const STORAGE_KEY = "aiClientUtilitySuite.prompts";
   const CLEANER_FILTER_KEY = "aiClientUtilitySuite.cleanerFilters";
   const CHAT_CACHE_KEY = "aiClientUtilitySuite.chatCache";
+  const CHAT_SORT_KEY = "aiClientUtilitySuite.chatSort";
   const DEFAULT_CLEANER_FILTERS = {
     suggested: [
       "health", "medical", "doctor", "symptom", "injury",
@@ -732,21 +733,25 @@
     await sleep(200);
   }
 
-  function modal(title, body) {
+  function modal(title, body, onBack = openMenu) {
     document.getElementById(APP_ID + "-modal")?.remove();
     const wrap = document.createElement("div");
     wrap.id = APP_ID + "-modal";
     wrap.innerHTML = `
       <div class="acus-backdrop">
         <div class="acus-modal">
-          <div class="acus-head"><strong>${title}</strong><button class="acus-close">×</button></div>
+          <div class="acus-head"><button class="acus-back" aria-label="Back to AI Tools">←</button><strong>${title}</strong><button class="acus-close" aria-label="Close">×</button></div>
           <div class="acus-body"></div>
         </div>
       </div>`;
     wrap.querySelector(".acus-body").append(body);
+    const back = wrap.querySelector('.acus-back');
+    back.hidden = !onBack;
+    back.onclick = () => { wrap.remove(); onBack?.(); };
     wrap.querySelector(".acus-close").onclick = () => wrap.remove();
     wrap.querySelector(".acus-backdrop").onclick = e => { if (e.target === e.currentTarget) wrap.remove(); };
     document.body.append(wrap);
+    return wrap;
   }
 
   async function searchChats() {
@@ -768,6 +773,7 @@
       chats = rememberChats(chats);
     }
 
+    if (!box.isConnected) return;
     input.disabled = false;
 
     const render = () => {
@@ -1109,11 +1115,17 @@
     return Boolean(range && !chat.protectedMatches?.length && chat.chatNumber >= range.start && chat.chatNumber <= range.end);
   }
 
-  function makeOverlay(chats) {
+  function sortNumberedChats(chats, order) {
+    return [...chats].sort((a, b) => order === 'oldest' ? a.chatNumber - b.chatNumber : b.chatNumber - a.chatNumber);
+  }
+
+  function makeOverlay(chats, selectedHrefs = new Set()) {
     chats = numberChats(chats);
     document.getElementById('vanick-cleaner-overlay')?.remove();
 
     const current = platform();
+    let sortOrder = GM_getValue(CHAT_SORT_KEY, 'newest') === 'oldest' ? 'oldest' : 'newest';
+    const displayChats = () => sortNumberedChats(chats, sortOrder);
     const theme = cleanerTheme();
     const overlay = document.createElement('div');
     overlay.id = 'vanick-cleaner-overlay';
@@ -1150,6 +1162,7 @@
     const style = document.createElement('style');
     style.textContent = `
       #vanick-cleaner-overlay *{box-sizing:border-box}
+      #vanick-cleaner-overlay [hidden]{display:none!important}
       #vanick-cleaner-overlay .vc-panel{width:min(860px,96vw);max-height:min(86vh,900px);display:flex;flex-direction:column;overflow:hidden;color:var(--vc-text);background:var(--vc-panel);border:1px solid var(--vc-border);border-radius:20px;box-shadow:${theme.shadow}}
       #vanick-cleaner-overlay .vc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:22px 24px 18px;border-bottom:1px solid var(--vc-border)}
       #vanick-cleaner-overlay .vc-brand{display:flex;align-items:flex-start;gap:13px;min-width:0}
@@ -1246,7 +1259,23 @@
     closeIcon.textContent = '×';
     closeIcon.onclick = () => overlay.remove();
 
-    header.append(brand, closeIcon);
+    const backIcon = document.createElement('button');
+    backIcon.type = 'button';
+    backIcon.className = 'vc-icon-button';
+    backIcon.setAttribute('aria-label', 'Back to AI Tools');
+    backIcon.textContent = '←';
+    backIcon.onclick = () => {
+      if (filterMode) {
+        makeOverlay((cachedHistory ? [...cachedHistory.values()] : uniqueChats()).map(classify), new Set(rows.filter(item => item.checkbox.checked).map(item => item.chat.href)));
+      } else if (selectionMode) {
+        manageFilters.hidden = false;
+        showChatList();
+      } else {
+        overlay.remove();
+        openMenu();
+      }
+    };
+    header.append(backIcon, brand, closeIcon);
     panel.appendChild(header);
 
     const toolbar = document.createElement('div');
@@ -1279,6 +1308,7 @@
     let selectionMode = false;
 
     function refreshSelection() {
+      updateBackLabel();
       const selected = rows.filter(item => item.checkbox.checked).length;
       summary.textContent = filterMode ? `${activeFilters.suggested.length} suggested filters · ${activeFilters.protected.length} protected filters` : `${chats.length} loaded · ${selected} selected`;
       for (const item of rows) item.row.classList.toggle('vc-selected', item.checkbox.checked);
@@ -1292,14 +1322,14 @@
       }
     }
 
-    for (const chat of chats) {
+    for (const chat of displayChats()) {
       const row = document.createElement('label');
       row.className = 'vc-row';
 
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.className = 'vc-checkbox';
-      checkbox.checked = false;
+      checkbox.checked = selectedHrefs.has(chat.href);
       checkbox.addEventListener('change', refreshSelection);
 
       const info = document.createElement('div');
@@ -1343,7 +1373,8 @@
       head.innerHTML = '<div><div class="vc-selection-title">Selected chats</div><div class="vc-selection-text">Only chats currently selected for deletion are shown here. Uncheck anything you want to keep.</div></div>';
       selectionReview.appendChild(head);
 
-      const selectedRows = rows.filter(item => item.checkbox.checked);
+      const selectedRows = [...rows.filter(item => item.checkbox.checked)].sort((a, b) =>
+        sortOrder === 'oldest' ? a.chat.chatNumber - b.chat.chatNumber : b.chat.chatNumber - a.chat.chatNumber);
       if (!selectedRows.length) {
         const empty = document.createElement('div');
         empty.className = 'vc-empty';
@@ -1407,7 +1438,7 @@
       deselectAll.hidden = true;
       manageFilters.hidden = true;
       reviewSelected.hidden = false;
-      reviewSelected.textContent = 'Back to chats';
+      reviewSelected.textContent = '← Back to chats';
       reviewSelected.disabled = false;
       renderSelectedReview();
       refreshSelection();
@@ -1552,7 +1583,7 @@
       const done = button('Done', 'accent');
       done.onclick = () => {
         const chatsToShow = cachedHistory ? rememberChats(uniqueChats()) : uniqueChats();
-        makeOverlay(chatsToShow.map(classify));
+        makeOverlay(chatsToShow.map(classify), new Set(rows.filter(item => item.checkbox.checked).map(item => item.chat.href)));
       };
       doneRow.appendChild(done);
       filterManager.appendChild(doneRow);
@@ -1575,12 +1606,12 @@
       selectAll.hidden = filterMode;
       deselectAll.hidden = filterMode;
       reviewSelected.hidden = filterMode;
-      manageFilters.textContent = filterMode ? 'Back to chats' : 'Manage filters';
+      manageFilters.textContent = filterMode ? '← Back to chats' : 'Manage filters';
 
       if (filterMode) renderFilterManager();
       else {
         const chatsToShow = cachedHistory ? rememberChats(uniqueChats()) : uniqueChats();
-        makeOverlay(chatsToShow.map(classify));
+        makeOverlay(chatsToShow.map(classify), new Set(rows.filter(item => item.checkbox.checked).map(item => item.chat.href)));
       }
 
       refreshSelection();
@@ -1621,7 +1652,7 @@
     const numberHint = document.createElement('div');
     numberHint.className = 'vc-subtitle';
     numberHint.style.cssText = 'grid-column:1/-1;max-width:none';
-    numberHint.textContent = 'Numbers follow sidebar order, oldest listed first. Refreshing history can change numbers. Range selection skips protected chats.';
+    numberHint.textContent = 'Chat #1 is at the oldest end of sidebar order. Sorting does not change numbers. Refreshing history can change numbers. Range selection skips protected chats.';
     numberControls.append(fromNumber, toNumber, selectNumberRange, numberHint);
 
     const refreshHistory = button('Refresh history', 'secondary');
@@ -1633,6 +1664,30 @@
 
     toolbarActions.append(manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, refreshHistory);
     toolbar.append(summary, toolbarActions);
+    const sortBar = document.createElement('div');
+    sortBar.className = 'vc-toolbar';
+    const sortLabel = document.createElement('label');
+    sortLabel.textContent = 'Organize chats';
+    sortLabel.htmlFor = 'vc-chat-sort';
+    const sortSelect = document.createElement('select');
+    sortSelect.id = 'vc-chat-sort';
+    sortSelect.className = 'vc-input';
+    for (const [value, label] of [['newest', 'Newest first'], ['oldest', 'Oldest first']]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      sortSelect.append(option);
+    }
+    sortSelect.value = sortOrder;
+    sortSelect.onchange = () => {
+      sortOrder = sortSelect.value === 'oldest' ? 'oldest' : 'newest';
+      GM_setValue(CHAT_SORT_KEY, sortOrder);
+      const orderedRows = [...rows].sort((a, b) => sortOrder === 'oldest' ? a.chat.chatNumber - b.chat.chatNumber : b.chat.chatNumber - a.chat.chatNumber);
+      for (const item of orderedRows) list.append(item.row);
+      if (selectionMode) renderSelectedReview();
+    };
+    sortBar.append(sortLabel, sortSelect);
+    panel.append(sortBar);
     panel.append(numberControls);
     panel.append(toolbar, listWrap, filterManager, selectionReview);
 
@@ -1661,7 +1716,7 @@
       const confirmed = confirm(`Delete ${selected.length} selected ${current} chat(s)?\n\nThis cannot be undone.`);
       if (!confirmed) return;
 
-      const controls = [remove, close, closeIcon, manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, fromNumber, toNumber, selectNumberRange, refreshHistory];
+      const controls = [remove, close, closeIcon, backIcon, sortSelect, manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, fromNumber, toNumber, selectNumberRange, refreshHistory];
       for (const control of controls) control.disabled = true;
 
       let deleted = 0;
@@ -1708,6 +1763,10 @@
     });
 
     document.body.appendChild(overlay);
+    function updateBackLabel() {
+      backIcon.setAttribute('aria-label', filterMode || selectionMode ? 'Back to chats' : 'Back to AI Tools');
+    }
+    updateBackLabel();
     refreshSelection();
   }
 
@@ -1749,6 +1808,7 @@
     });
 
     const chats = rememberChats(scannedChats);
+    if (!loading.isConnected) return;
     document.getElementById(APP_ID + "-modal")?.remove();
     makeOverlay(chats.map(classify));
   }
@@ -1926,7 +1986,7 @@
       b.onclick = fn;
       box.append(b);
     });
-    modal("AI Tools · " + platform(), box);
+    modal("AI Tools · " + platform(), box, null);
   }
 
   function ensureLauncherDock() {

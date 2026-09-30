@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.8
+
+### Added
+- Organize chats bar with Newest first and Oldest first choices. Newest first is the default; the preference is saved.
+- Back arrows in Search Chats, Bulk Archive, Prompt Library, and Chat Cleaner. Cleaner subsections return to the chat list before returning to AI Tools.
+
+### Fixed
+- Sorting preserves numbers and selections, including in selected chat review. Returning from filter settings keeps selected chats.
+- Returning from the loading screen no longer reopens Chat Cleaner after the scan finishes.
+- Hidden cleaner subsections stay hidden so the chat list, filter settings, and selection review do not overlap.
+
+### Community
+- Thanks to @sam-cre for the original caching and date organization suggestions in issues #4 and #5. Numbered ranges and display sorting build on that organization work.
+
 ## 0.5.7
 
 ### Added
@@ -10,6 +24,9 @@
 ### Improved
 - Keep fresh sidebar observations in sidebar order when updating cached history, and start full scans at the top before assigning positions.
 - Explain that sidebar position is not a verified creation date and numbers may change when the index is rebuilt.
+
+### Community
+- Thanks to @sam-cre for the original organization suggestion in issue #5. Numbered ranges provide an alternative when dates are unavailable.
 
 ## 0.5.6
 

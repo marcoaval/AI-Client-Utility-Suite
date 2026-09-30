@@ -10,9 +10,21 @@ const context = vm.createContext({
   document: {}, console,
 });
 vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) +
-  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange }; })();', context);
+  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats }; })();', context);
 const h = context.helpers;
 const day = value => h.parseDateInput(value);
+
+test('display sorting preserves chat numbers and numeric range membership', () => {
+  const chats = h.numberChats([{ href: '/c/new' }, { href: '/c/middle' }, { href: '/c/old' }]);
+  const newest = h.sortNumberedChats(chats, 'newest');
+  assert.equal(newest[0].href, '/c/new');
+  assert.equal(newest[0].chatNumber, 3);
+  const oldest = h.sortNumberedChats(newest, 'oldest');
+  assert.equal(oldest[0].href, '/c/old');
+  assert.equal(oldest[0].chatNumber, 1);
+  assert.equal(chats[0].href, '/c/old');
+  for (const chat of newest) assert.equal(h.chatMatchesNumberRange(chat, { start: 1, end: 2 }), chat.chatNumber <= 2);
+});
 
 test('numbers begin at one at the oldest end of indexed sidebar order', () => {
   const input = [{ href: '/c/new', title: 'New' }, { href: '/c/middle' }, { href: '/c/old' }];

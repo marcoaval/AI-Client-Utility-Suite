@@ -15,6 +15,10 @@ Click **AI Tools** to open the tools menu directly. History is loaded through th
 
 Chat Cleaner numbers the indexed chats **#1 through #N**, starting at the oldest end of the indexed sidebar list. Enter **From chat number** and **To chat number**, then click **Select number range** to select an inclusive range, such as 1–50. Protected chats are skipped; individual checkboxes remain available. Review the selection before confirming deletion.
 
+Use the **Organize chats** bar to choose **Newest first** or **Oldest first**. Newest first is the default and your choice is saved. Sorting changes the display order without changing chat numbers, selected chats, or range boundaries.
+
+Each tool has a **←** back button to return to AI Tools. Inside Chat Cleaner, the arrow returns from Manage filters or Review selected to the chat list first, keeping your selections.
+
 Numbers describe indexed sidebar positions, not verified creation dates. ChatGPT can reorder chats by recent activity. Numbers may change when history is refreshed, chats are added, or chats are removed. Use **Refresh history** to rebuild the list from the sidebar before choosing a range. Known dates remain visible as optional information; unknown-date labels are hidden.
 
 ### Prompt Library
@@ -57,7 +61,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Early development. Version 0.5.7 combines sidebar search, cached history and numbered range selection, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
+Early development. Version 0.5.8 combines sidebar search, cached history, numbered range selection and sorting, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
 
 ## Privacy
 
