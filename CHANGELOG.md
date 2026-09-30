@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1
+
+### Fixed
+- Fixed the Chat Cleaner date selection control not responding clearly when no date was selected.
+- The Select date button now stays disabled until a specific date group is chosen and updates to show the selected date.
+- Selecting a date now checks the matching chats without unexpectedly switching views.
+
 ## 0.5.0
 
 ### Added
