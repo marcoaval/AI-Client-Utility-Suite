@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.2
+
+### Fixed
+- Fixed Chat Cleaner full history scanning stopping before reaching older conversations.
+- Improved lazy loading detection near the bottom of the sidebar.
+- Chat Cleaner now performs a fresh full history scan before opening and returns the sidebar to recent chats when finished.
+
+## 0.4.1
+
+### Fixed
+- Restored the original Chat Cleaner interface inside AI Client Utility Suite.
+- Restored the original cleaner layout, filter manager, selected chat review, status labels, and styling.
+
 ## 0.4.0
 
 ### Added
@@ -10,8 +23,6 @@
 ### Changed
 - Chat Cleaner is now available from the main AI Tools launcher instead of requiring a separate interface.
 - Cleaner filter settings are stored with the utility suite so the combined app can manage them from one place.
-
-# Changelog
 
 ## 0.3.0
 
