@@ -23,6 +23,22 @@ Load the full chat history, filter conversations by title, select the chats you 
 3. Open the Raw version of the file and install it with Tampermonkey.
 4. Visit ChatGPT or Claude and use the **🧰 AI Tools** button.
 
+## Updating
+
+Tampermonkey can update the userscript automatically because the script includes update and download URLs that point to the latest version in this repository.
+
+To check for an update manually:
+
+1. Open the Tampermonkey dashboard.
+2. Find **AI Client Utility Suite** in the installed scripts list.
+3. Open the script.
+4. Use Tampermonkey's **Check for updates** option.
+5. If a newer version is available, install the update and refresh ChatGPT or Claude.
+
+You can also update manually by opening `ai_client_utility_suite.user.js` on GitHub, opening the Raw version, and allowing Tampermonkey to replace the installed version.
+
+Your saved Prompt Library data and cleaner filter settings are stored separately from the script code, so normal script updates should not remove them.
+
 ## Supported clients
 
 - ChatGPT
@@ -30,7 +46,7 @@ Load the full chat history, filter conversations by title, select the chats you 
 
 ## Project status
 
-Early development. Version 0.4.0 combines full-history search, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
+Early development. Version 0.4.2 combines full-history search, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
 
 ## Privacy
 
