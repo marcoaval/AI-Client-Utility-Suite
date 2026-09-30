@@ -11,7 +11,7 @@ Search across the full chat history by automatically loading older sidebar entri
 Save reusable prompts in Tampermonkey storage so the same library is available on both ChatGPT and Claude. Prompts can also be exported to and imported from a JSON backup.
 
 ### Bulk Archive
-Planned for the next release. The goal is to provide a review-first workflow so chats are never archived without explicit selection.
+Load the full chat history, filter conversations by title, select the chats you want, and archive multiple conversations in one confirmed batch.
 
 ## Install
 
@@ -27,7 +27,7 @@ Planned for the next release. The goal is to provide a review-first workflow so 
 
 ## Project status
 
-Early development. Version 0.2.0 adds full-history search, shared prompt storage across supported clients, prompt import/export, and prompt-library layout improvements.
+Early development. Version 0.3.0 adds full-history bulk archiving alongside full-history search and the shared Prompt Library.
 
 ## Privacy
 
@@ -35,7 +35,6 @@ Prompt Library data is stored locally through Tampermonkey's userscript storage.
 
 ## Roadmap
 
-- Bulk chat archiving with review and selection
 - Prompt categories and search
 - Favorites and pinning
 - Additional organization tools
