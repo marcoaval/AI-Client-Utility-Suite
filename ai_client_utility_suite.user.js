@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.2.0
+// @version      0.2.1
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -423,7 +423,8 @@
 
     const style = document.createElement("style");
     style.textContent = `
-      #${APP_ID}-launcher{border:1px solid rgba(128,128,128,.35);border-radius:14px;padding:10px 14px;background:#171717;color:#fff;font:600 14px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.22);cursor:pointer;pointer-events:auto}
+      #${APP_ID}-launcher{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:8px 13px;border:1px solid rgba(128,128,128,.45);border-radius:999px;color:#f5f5f5;background:#181818;box-shadow:0 8px 30px rgba(0,0,0,.18);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:12px;font-weight:750;letter-spacing:-.01em;cursor:pointer;pointer-events:auto;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+      #${APP_ID}-launcher:hover{transform:translateY(-1px);border-color:#666;box-shadow:0 10px 34px rgba(0,0,0,.24)}
       .acus-backdrop{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px}
       .acus-modal{width:min(680px,95vw);max-height:82vh;overflow:auto;background:#181818;color:#f5f5f5;border:1px solid #444;border-radius:18px;font:14px system-ui;box-shadow:0 24px 80px rgba(0,0,0,.45)}
       .acus-head{position:sticky;top:0;background:#181818;display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid #333}
