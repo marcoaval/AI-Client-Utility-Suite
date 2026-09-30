@@ -5,10 +5,10 @@ A standalone userscript that adds quality of life tools to ChatGPT and Claude.
 ## Features
 
 ### Search Chats
-Search the chat titles currently loaded in the sidebar from one interface.
+Search across the full chat history by automatically loading older sidebar entries, then returning the sidebar to recent chats.
 
 ### Prompt Library
-Save reusable prompts locally in your browser and copy them when needed.
+Save reusable prompts in Tampermonkey storage so the same library is available on both ChatGPT and Claude. Prompts can also be exported to and imported from a JSON backup.
 
 ### Bulk Archive
 Planned for the next release. The goal is to provide a review-first workflow so chats are never archived without explicit selection.
@@ -27,15 +27,14 @@ Planned for the next release. The goal is to provide a review-first workflow so 
 
 ## Project status
 
-Early development. Version 0.1.0 establishes the shared interface and first utility modules.
+Early development. Version 0.2.0 adds full-history search, shared prompt storage across supported clients, prompt import/export, and prompt-library layout improvements.
 
 ## Privacy
 
-Prompt Library data is stored locally in the browser using localStorage. The userscript does not send saved prompts to an external server.
+Prompt Library data is stored locally through Tampermonkey's userscript storage. The userscript does not send saved prompts to an external server.
 
 ## Roadmap
 
-- Full-history loading for Search Chats
 - Bulk chat archiving with review and selection
 - Prompt categories and search
 - Favorites and pinning
