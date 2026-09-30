@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.1.0
+// @version      0.1.1
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -163,11 +163,22 @@
     modal("AI Tools · " + platform(), box);
   }
 
+  function ensureLauncherDock() {
+    let dock = document.getElementById("ai-userscript-launcher-dock");
+    if (!dock) {
+      dock = document.createElement("div");
+      dock.id = "ai-userscript-launcher-dock";
+      dock.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483646;display:flex;flex-direction:row-reverse;align-items:center;gap:10px;pointer-events:none;";
+      document.body.append(dock);
+    }
+    return dock;
+  }
+
   function inject() {
     if (document.getElementById(APP_ID + "-launcher")) return;
     const style = document.createElement("style");
     style.textContent = `
-      #${APP_ID}-launcher{position:fixed;right:18px;bottom:18px;z-index:2147483646;border:1px solid rgba(128,128,128,.35);border-radius:14px;padding:10px 14px;background:#171717;color:#fff;font:600 14px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.22);cursor:pointer}
+      #${APP_ID}-launcher{border:1px solid rgba(128,128,128,.35);border-radius:14px;padding:10px 14px;background:#171717;color:#fff;font:600 14px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.22);cursor:pointer;pointer-events:auto}
       .acus-backdrop{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px}
       .acus-modal{width:min(680px,95vw);max-height:82vh;overflow:auto;background:#181818;color:#f5f5f5;border:1px solid #444;border-radius:18px;font:14px system-ui;box-shadow:0 24px 80px rgba(0,0,0,.45)}
       .acus-head{position:sticky;top:0;background:#181818;display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid #333}
@@ -182,7 +193,7 @@
     btn.id = APP_ID + "-launcher";
     btn.textContent = "🧰 AI Tools";
     btn.onclick = openMenu;
-    document.body.append(btn);
+    ensureLauncherDock().append(btn);
   }
 
   inject();
