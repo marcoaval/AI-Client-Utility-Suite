@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+### Improved
+- Updated the AI Tools launcher styling to match the Chat Cleaner button more closely when both userscripts are installed.
+
 ## 0.2.0
 
 ### Added
