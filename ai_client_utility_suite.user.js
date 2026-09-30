@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.5.0
+// @version      0.5.1
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -1414,21 +1414,28 @@
     }
 
     const selectDate = button('Select date', 'secondary');
+    selectDate.disabled = true;
+
     selectDate.onclick = () => {
       const chosenDate = dateFilter.value;
       if (!chosenDate) return;
-      rows.forEach(item => {
+
+      for (const item of rows) {
         item.checkbox.checked = (item.chat.dateLabel || 'Unknown date') === chosenDate;
-      });
+      }
+
       refreshSelection();
-      if (rows.some(item => item.checkbox.checked)) showSelectedReview();
     };
 
     dateFilter.onchange = () => {
       const chosenDate = dateFilter.value;
-      rows.forEach(item => {
+
+      for (const item of rows) {
         item.row.hidden = Boolean(chosenDate) && (item.chat.dateLabel || 'Unknown date') !== chosenDate;
-      });
+      }
+
+      selectDate.disabled = !chosenDate;
+      selectDate.textContent = chosenDate ? `Select ${chosenDate}` : 'Select date';
     };
 
     const refreshHistory = button('Refresh history', 'secondary');
