@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.5.3
+// @version      0.5.4
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -37,6 +37,7 @@
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   let cachedHistory = null;
   let stopSearchIndexing = null;
+  let searchIndexDialog = null;
 
   const platform = () => location.hostname.includes("claude.ai") ? "Claude" : "ChatGPT";
 
@@ -418,67 +419,31 @@
     ) || null;
   }
 
-  async function indexWithChatGPTSearch() {
+  function syncAutomaticSearchIndexing() {
     if (platform() !== "ChatGPT") return;
+    const dialog = nativeSearchDialog();
+    if (dialog === searchIndexDialog) return;
     stopSearchIndexing?.();
-    document.getElementById(APP_ID + "-modal")?.remove();
-    document.getElementById('vanick-cleaner-overlay')?.remove();
+    if (!dialog) return;
 
-    let dialog = nativeSearchDialog();
-    if (!dialog) {
-      const search = [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
-        visible(element) && !element.closest('.acus-backdrop, #vanick-cleaner-overlay') &&
-        /^(search chats|search)(?:\s|$)/i.test(elementText(element))
-      );
-      if (!search) {
-        alert('Open ChatGPT’s Search chats, then choose Index with ChatGPT Search again.');
-        return;
-      }
-      search.click();
-      for (let attempt = 0; attempt < 20 && !dialog; attempt++) {
-        await sleep(100);
-        dialog = nativeSearchDialog();
-      }
-    }
-    if (!dialog) {
-      alert('Search chats was not detected. Sidebar indexing remains available.');
-      return;
-    }
-
-    const bar = document.createElement('div');
-    bar.id = APP_ID + '-search-index';
-    bar.style.cssText = 'position:fixed;bottom:16px;left:16px;right:16px;z-index:2147483647;padding:12px;background:#181818;color:#fff;border:1px solid #777;border-radius:12px;font:14px system-ui;display:flex;gap:12px;align-items:center';
-    const status = document.createElement('span');
-    status.style.flex = '1';
-    const done = document.createElement('button');
-    done.textContent = 'Finish indexing';
-    bar.append(status, done);
-    document.body.append(bar);
-    const collected = new Map();
+    searchIndexDialog = dialog;
     let timer;
     const capture = () => {
-      mergeChats(collected, getChatLinks(dialog));
-      rememberChats([...collected.values()]);
-      status.textContent = `${collected.size} Search chats indexed. Search and scroll to load more results; only exposed dates are saved. Close Search, then open Chat Cleaner to review.`;
+      const chats = getChatLinks(dialog);
+      if (chats.length) rememberChats(chats);
     };
     const observer = new MutationObserver(() => {
       clearTimeout(timer);
       timer = setTimeout(capture, 180);
     });
     observer.observe(dialog, { childList: true, subtree: true, attributes: true, characterData: true });
-    const lifecycle = new MutationObserver(() => {
-      if (!dialog.isConnected) stopSearchIndexing?.();
-    });
-    lifecycle.observe(document.body, { childList: true, subtree: true });
     stopSearchIndexing = () => {
       clearTimeout(timer);
       observer.disconnect();
-      lifecycle.disconnect();
       capture();
-      bar.remove();
+      searchIndexDialog = null;
       stopSearchIndexing = null;
     };
-    done.onclick = () => stopSearchIndexing?.();
     capture();
   }
 
@@ -1688,11 +1653,6 @@
 
     dateControls.append(fromDate, toDate, selectRange, beforeDate, selectBefore);
     toolbarActions.append(manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, refreshHistory);
-    if (platform() === 'ChatGPT') {
-      const indexSearch = button('Index with ChatGPT Search', 'secondary');
-      indexSearch.onclick = indexWithChatGPTSearch;
-      toolbarActions.append(indexSearch);
-    }
     toolbar.append(summary, toolbarActions);
     panel.append(dateControls);
     panel.append(toolbar, listWrap, filterManager, selectionReview);
@@ -1986,13 +1946,6 @@
       b.onclick = fn;
       box.append(b);
     });
-    if (platform() === 'ChatGPT') {
-      const indexSearch = document.createElement('button');
-      indexSearch.className = 'acus-menu-btn';
-      indexSearch.textContent = '🔎 Index with ChatGPT Search';
-      indexSearch.onclick = indexWithChatGPTSearch;
-      box.append(indexSearch);
-    }
     modal("AI Tools · " + platform(), box);
   }
 
@@ -2040,5 +1993,9 @@
   if (cachedHistory) mergeChats(cachedHistory, getChatLinks());
   loadPrompts();
   inject();
-  new MutationObserver(inject).observe(document.documentElement, { childList: true, subtree: true });
+  syncAutomaticSearchIndexing();
+  new MutationObserver(() => {
+    inject();
+    syncAutomaticSearchIndexing();
+  }).observe(document.documentElement, { childList: true, subtree: true });
 })();

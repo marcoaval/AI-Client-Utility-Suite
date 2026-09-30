@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.4
+
+### Changed
+- Automatically cache chats and exposed dates whenever ChatGPT's native Search chats dialog is used.
+- Removed the separate Index with ChatGPT Search buttons, indexing bar, and Finish indexing step.
+- Stop observing results when Search closes and resume automatically when it reopens. Empty results do not create an empty history cache.
+
 ## 0.5.3
 
 ### Added

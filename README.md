@@ -10,8 +10,8 @@ Search across the full chat history by automatically loading older sidebar entri
 ### Chat Cleaner
 Review the full chat history, use suggested and protected title filters, manually select conversations, and delete selected chats only after confirmation.
 
-### ChatGPT Search-assisted indexing
-Choose **Index with ChatGPT Search** in AI Tools or Chat Cleaner. The suite opens ChatGPT's native **Search chats** and caches conversation links as results load. Enter your own searches and scroll through the results to index more chats. Choose **Finish indexing**, close Search, and reopen Chat Cleaner to review the cached chats.
+### Automatic ChatGPT Search indexing
+Use ChatGPT's native **Search chats** normally. The suite automatically caches conversation links and exposed dates as results load, including when you search or scroll. Close Search and open Chat Cleaner to review the cached chats. There is no separate indexing button, progress bar, or finish step.
 
 This supplements the sidebar scan; a search only covers the results ChatGPT exposes, not necessarily your entire history. Dates are saved when a result exposes a `time` element or a sidebar date group. Missing dates remain **Unknown date**. Relative date groups are saved as calendar ranges when indexed so their dates do not drift as the cache ages. Date selection includes a grouped chat only when its whole known range fits inside the chosen range. Previously cached relative groups can be rebuilt with **Refresh history**.
 
@@ -55,7 +55,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Early development. Version 0.5.3 combines sidebar search, ChatGPT Search-assisted indexing, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
+Early development. Version 0.5.4 combines sidebar search, automatic ChatGPT Search indexing, bulk archiving, Chat Cleaner, and the shared Prompt Library in one userscript.
 
 ## Privacy
 
