@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.4.2
+// @version      0.5.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -18,6 +18,7 @@
   const APP_ID = "ai-client-utility-suite";
   const STORAGE_KEY = "aiClientUtilitySuite.prompts";
   const CLEANER_FILTER_KEY = "aiClientUtilitySuite.cleanerFilters";
+  const CHAT_CACHE_KEY = "aiClientUtilitySuite.chatCache";
   const DEFAULT_CLEANER_FILTERS = {
     suggested: [
       "health", "medical", "doctor", "symptom", "injury",
@@ -37,6 +38,37 @@
   let cachedHistory = null;
 
   const platform = () => location.hostname.includes("claude.ai") ? "Claude" : "ChatGPT";
+
+  function cacheStorageKey() {
+    return `${CHAT_CACHE_KEY}.${platform().toLowerCase()}`;
+  }
+
+  function loadPersistentChatCache() {
+    try {
+      const raw = GM_getValue(cacheStorageKey(), "");
+      if (!raw) return null;
+
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!Array.isArray(parsed?.chats)) return null;
+
+      return new Map(parsed.chats.map(chat => [chat.href, chat]));
+    } catch {
+      return null;
+    }
+  }
+
+  function savePersistentChatCache() {
+    if (!cachedHistory) return;
+    GM_setValue(cacheStorageKey(), JSON.stringify({
+      savedAt: Date.now(),
+      chats: [...cachedHistory.values()]
+    }));
+  }
+
+  function clearPersistentChatCache() {
+    cachedHistory = null;
+    GM_setValue(cacheStorageKey(), "");
+  }
 
   function normalizePrompts(values) {
     if (!Array.isArray(values)) return [];
@@ -166,6 +198,34 @@
     return [...document.querySelectorAll(selector)];
   }
 
+  function inferChatDateLabel(link) {
+    const datePattern = /^(today|yesterday|previous 7 days|previous 30 days|last 7 days|last 30 days|this week|last week|january|february|march|april|may|june|july|august|september|october|november|december|\d{4}|[a-z]+ \d{4})$/i;
+
+    let node = link;
+    for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+      let sibling = node.previousElementSibling;
+      let checked = 0;
+
+      while (sibling && checked < 8) {
+        const text = (sibling.textContent || "").replace(/\s+/g, " ").trim();
+        if (text && text.length <= 40 && datePattern.test(text)) return text;
+        sibling = sibling.previousElementSibling;
+        checked++;
+      }
+
+      const parent = node.parentElement;
+      if (parent) {
+        for (const child of [...parent.children].slice(0, 8)) {
+          if (child === node) break;
+          const text = (child.textContent || "").replace(/\s+/g, " ").trim();
+          if (text && text.length <= 40 && datePattern.test(text)) return text;
+        }
+      }
+    }
+
+    return "Unknown date";
+  }
+
   function getChatLinks() {
     const seen = new Set();
     const chats = [];
@@ -184,7 +244,7 @@
 
       if (!title) continue;
       seen.add(href);
-      chats.push({ href, url: link.href, title });
+      chats.push({ href, url: link.href, title, dateLabel: inferChatDateLabel(link) });
     }
 
     return chats;
@@ -192,7 +252,19 @@
 
   function mergeChats(target, chats) {
     for (const chat of chats) {
-      if (!target.has(chat.href)) target.set(chat.href, chat);
+      const existing = target.get(chat.href);
+      if (!existing) {
+        target.set(chat.href, chat);
+        continue;
+      }
+
+      target.set(chat.href, {
+        ...existing,
+        ...chat,
+        dateLabel: chat.dateLabel && chat.dateLabel !== "Unknown date"
+          ? chat.dateLabel
+          : (existing.dateLabel || "Unknown date")
+      });
     }
   }
 
@@ -280,11 +352,13 @@
   function rememberChats(chats) {
     if (!cachedHistory) cachedHistory = new Map();
     mergeChats(cachedHistory, chats);
+    savePersistentChatCache();
     return [...cachedHistory.values()];
   }
 
   function forgetChat(href) {
     cachedHistory?.delete(href);
+    savePersistentChatCache();
   }
 
   function findChatLink(href) {
@@ -1052,6 +1126,7 @@
       if (chat.matches.length) detailParts.push(`Matched: ${chat.matches.join(', ')}`);
       else detailParts.push('No suggested cleanup filter match');
       if (chat.protectedMatches.length) detailParts.push(`Protected: ${chat.protectedMatches.join(', ')}`);
+      detailParts.push(`Date: ${chat.dateLabel || 'Unknown date'}`);
 
       const statusClass = chat.protectedMatches.length ? 'vc-pill-protected' : chat.likelyPersonal ? 'vc-pill-personal' : 'vc-pill-review';
       const statusText = chat.protectedMatches.length ? 'Protected' : chat.likelyPersonal ? 'Suggested' : 'Review';
@@ -1325,7 +1400,45 @@
       refreshSelection();
     };
 
-    toolbarActions.append(manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll);
+    const dateFilter = document.createElement('select');
+    dateFilter.className = 'vc-input';
+    dateFilter.style.cssText = 'width:auto;min-width:130px;flex:0 0 auto;';
+    dateFilter.innerHTML = '<option value="">All dates</option>';
+
+    const dateLabels = [...new Set(chats.map(chat => chat.dateLabel || 'Unknown date'))];
+    for (const label of dateLabels) {
+      const option = document.createElement('option');
+      option.value = label;
+      option.textContent = label;
+      dateFilter.appendChild(option);
+    }
+
+    const selectDate = button('Select date', 'secondary');
+    selectDate.onclick = () => {
+      const chosenDate = dateFilter.value;
+      if (!chosenDate) return;
+      rows.forEach(item => {
+        item.checkbox.checked = (item.chat.dateLabel || 'Unknown date') === chosenDate;
+      });
+      refreshSelection();
+      if (rows.some(item => item.checkbox.checked)) showSelectedReview();
+    };
+
+    dateFilter.onchange = () => {
+      const chosenDate = dateFilter.value;
+      rows.forEach(item => {
+        item.row.hidden = Boolean(chosenDate) && (item.chat.dateLabel || 'Unknown date') !== chosenDate;
+      });
+    };
+
+    const refreshHistory = button('Refresh history', 'secondary');
+    refreshHistory.onclick = async () => {
+      overlay.remove();
+      clearPersistentChatCache();
+      await chatCleaner(true);
+    };
+
+    toolbarActions.append(manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll, dateFilter, selectDate, refreshHistory);
     toolbar.append(summary, toolbarActions);
     panel.append(toolbar, listWrap, filterManager, selectionReview);
 
@@ -1421,9 +1534,15 @@
   }
 
 
-  async function chatCleaner() {
+  async function chatCleaner(forceRefresh = false) {
     activeFilters = loadFilters();
     document.getElementById(APP_ID + "-modal")?.remove();
+
+    if (!forceRefresh && cachedHistory?.size) {
+      const chats = rememberChats(getChatLinks());
+      makeOverlay(chats.map(classify));
+      return;
+    }
 
     const loading = document.createElement("div");
     loading.innerHTML = '<div class="acus-status">Loading full chat history...</div>';
@@ -1605,7 +1724,7 @@
   function openMenu() {
     const box = document.createElement("div");
     box.className = "acus-menu";
-    [["🔎 Search Chats", searchChats], ["📦 Bulk Archive", bulkArchive], ["🧹 Chat Cleaner", chatCleaner], ["📚 Prompt Library", promptLibrary]].forEach(([label, fn]) => {
+    [["🔎 Search Chats", searchChats], ["📦 Bulk Archive", bulkArchive], ["🧹 Chat Cleaner", () => chatCleaner(false)], ["📚 Prompt Library", promptLibrary]].forEach(([label, fn]) => {
       const b = document.createElement("button");
       b.className = "acus-menu-btn";
       b.textContent = label;
@@ -1655,6 +1774,8 @@
     ensureLauncherDock().append(btn);
   }
 
+  cachedHistory = loadPersistentChatCache();
+  if (cachedHistory) mergeChats(cachedHistory, getChatLinks());
   loadPrompts();
   inject();
   new MutationObserver(inject).observe(document.documentElement, { childList: true, subtree: true });
