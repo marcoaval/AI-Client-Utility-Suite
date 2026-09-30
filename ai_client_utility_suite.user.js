@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.2.1
+// @version      0.3.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -186,6 +186,262 @@
     if (!cachedHistory) cachedHistory = new Map();
     mergeChats(cachedHistory, chats);
     return [...cachedHistory.values()];
+  }
+
+  function forgetChat(href) {
+    cachedHistory?.delete(href);
+  }
+
+  function findChatLink(href) {
+    return chatLinkElements().find(link => (link.getAttribute("href") || "") === href) || null;
+  }
+
+  function visible(element) {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  }
+
+  function elementText(element) {
+    return `${element?.textContent || ""} ${element?.getAttribute?.("aria-label") || ""} ${element?.getAttribute?.("title") || ""}`
+      .trim()
+      .toLowerCase();
+  }
+
+  function utilityContains(element) {
+    return Boolean(document.getElementById(APP_ID + "-modal")?.contains(element));
+  }
+
+  function rowCandidates(link) {
+    const candidates = [];
+    let node = link;
+
+    for (let depth = 0; node && depth < 9; depth++, node = node.parentElement) {
+      candidates.push(node);
+    }
+
+    return candidates;
+  }
+
+  function getChatRow(link) {
+    return rowCandidates(link).find(node => node.querySelector?.("button")) ||
+      link.closest("li") ||
+      link.closest('[role="listitem"]') ||
+      link.closest("[data-testid]") ||
+      link.parentElement;
+  }
+
+  function fireHover(element) {
+    for (const type of ["pointerover", "mouseover", "mouseenter"]) {
+      element.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+    }
+  }
+
+  function menuButtonFromRow(row) {
+    const buttons = [...row.querySelectorAll("button")].filter(visible);
+    const labeled = buttons.find(button => /more|menu|option|action|conversation/.test(elementText(button)));
+    if (labeled) return labeled;
+
+    const symbol = buttons.find(button => /⋮|⋯|\.\.\./.test(button.textContent || ""));
+    if (symbol) return symbol;
+
+    const rowRect = row.getBoundingClientRect();
+    const rightSide = buttons
+      .map(button => ({ button, rect: button.getBoundingClientRect() }))
+      .filter(item => item.rect.left >= rowRect.left + rowRect.width * 0.55)
+      .sort((a, b) => b.rect.right - a.rect.right);
+
+    return rightSide[0]?.button || buttons.at(-1) || null;
+  }
+
+  function globalMenuButtonNearRow(row) {
+    const rowRect = row.getBoundingClientRect();
+    const buttons = [...document.querySelectorAll("button")].filter(visible);
+
+    return buttons.find(button => {
+      const rect = button.getBoundingClientRect();
+      const nearVertical = rect.top <= rowRect.bottom + 8 && rect.bottom >= rowRect.top - 8;
+      const nearHorizontal = rect.left >= rowRect.left + rowRect.width * 0.55 && rect.right <= rowRect.right + 80;
+      return nearVertical && nearHorizontal && /more|menu|option|action|conversation|⋮|⋯/.test(elementText(button));
+    }) || null;
+  }
+
+  async function waitFor(getter, timeout = 2500, interval = 80) {
+    const end = Date.now() + timeout;
+
+    while (Date.now() < end) {
+      const value = getter();
+      if (value) return value;
+      await sleep(interval);
+    }
+
+    return null;
+  }
+
+  function activate(element) {
+    const rect = element.getBoundingClientRect();
+    const options = {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      buttons: 1,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2
+    };
+
+    try {
+      element.dispatchEvent(new PointerEvent("pointerdown", options));
+      element.dispatchEvent(new MouseEvent("mousedown", options));
+      element.dispatchEvent(new PointerEvent("pointerup", { ...options, buttons: 0 }));
+      element.dispatchEvent(new MouseEvent("mouseup", { ...options, buttons: 0 }));
+    } catch {
+      element.dispatchEvent(new MouseEvent("mousedown", options));
+      element.dispatchEvent(new MouseEvent("mouseup", { ...options, buttons: 0 }));
+    }
+
+    element.click();
+  }
+
+  async function locateChatLink(href) {
+    let link = findChatLink(href);
+    if (link) return link;
+
+    const containers = scrollContainersForChats();
+    for (const container of containers) {
+      const start = container.scrollTop;
+      const step = Math.max(180, Math.floor(container.clientHeight * 0.72));
+
+      container.scrollTop = 0;
+      await sleep(120);
+
+      let stableAtBottom = 0;
+      while (stableAtBottom < 3) {
+        link = findChatLink(href);
+        if (link) return link;
+
+        const max = Math.max(0, container.scrollHeight - container.clientHeight);
+        const next = Math.min(container.scrollTop + step, max);
+        container.scrollTop = next;
+        await sleep(140);
+
+        const currentMax = Math.max(0, container.scrollHeight - container.clientHeight);
+        if (container.scrollTop >= currentMax - 4) stableAtBottom++;
+        else stableAtBottom = 0;
+      }
+
+      container.scrollTop = start;
+      await sleep(80);
+    }
+
+    return null;
+  }
+
+  async function openChatMenu(chat) {
+    const link = await locateChatLink(chat.href);
+    if (!link) throw new Error("Could not locate this chat in the sidebar.");
+
+    const row = getChatRow(link);
+    if (!row) throw new Error("Could not locate this chat row.");
+
+    row.scrollIntoView({ block: "nearest" });
+    fireHover(row);
+    fireHover(link);
+    await sleep(400);
+
+    const menuButton = await waitFor(() => menuButtonFromRow(row) || globalMenuButtonNearRow(row), 3000, 80);
+    if (!menuButton) throw new Error("Could not find the chat options button.");
+
+    activate(menuButton);
+    await sleep(300);
+  }
+
+  function actionableAncestor(element) {
+    let node = element;
+
+    for (let depth = 0; node && depth < 7; depth++, node = node.parentElement) {
+      if (utilityContains(node)) return null;
+
+      const role = (node.getAttribute?.("role") || "").toLowerCase();
+      const tag = node.tagName;
+      const slot = (node.getAttribute?.("data-slot") || "").toLowerCase();
+
+      if (
+        tag === "BUTTON" ||
+        tag === "A" ||
+        role === "menuitem" ||
+        role === "option" ||
+        role === "button" ||
+        node.hasAttribute?.("tabindex") ||
+        slot.includes("menu") ||
+        slot.includes("dropdown")
+      ) {
+        return node;
+      }
+    }
+
+    return element.parentElement || element;
+  }
+
+  function archiveActions(root = document.body) {
+    const selectors = [
+      "button",
+      '[role="button"]',
+      '[role="menuitem"]',
+      '[role="option"]',
+      '[data-testid*="archive"]',
+      '[aria-label*="archive" i]'
+    ].join(",");
+
+    return [...root.querySelectorAll(selectors)]
+      .filter(element => visible(element) && !utilityContains(element))
+      .filter(element => /archive/.test(elementText(element)))
+      .map(element => actionableAncestor(element))
+      .filter(Boolean);
+  }
+
+  function menuArchiveAction() {
+    const candidates = [...new Set(archiveActions())];
+
+    return candidates.find(element =>
+      element.closest('[role="menu"], [role="menuitem"], [data-radix-menu-content], [data-slot*="menu"], [data-slot*="dropdown"]')
+    ) || candidates.find(element => !element.closest('[role="dialog"], [role="alertdialog"]')) || null;
+  }
+
+  function confirmationArchiveAction() {
+    const dialogs = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')]
+      .filter(visible)
+      .filter(dialog => !utilityContains(dialog));
+
+    for (const dialog of dialogs) {
+      const candidates = [...new Set(archiveActions(dialog))];
+      const exact = candidates.find(element => elementText(element) === "archive");
+      if (exact) return exact;
+      if (candidates.length) return candidates.at(-1);
+    }
+
+    return null;
+  }
+
+  async function archiveChat(chat) {
+    await openChatMenu(chat);
+
+    const archiveAction = await waitFor(menuArchiveAction, 3000, 80);
+    if (!archiveAction) throw new Error("The chat menu opened, but the Archive command was not found.");
+
+    activate(archiveAction);
+    await sleep(300);
+
+    const confirmButton = await waitFor(confirmationArchiveAction, 900, 100);
+    if (confirmButton) {
+      activate(confirmButton);
+    }
+
+    const removed = await waitFor(() => !findChatLink(chat.href), 5000, 120);
+    if (!removed) throw new Error("Archive was selected, but the chat remained visible in the sidebar.");
+
+    forgetChat(chat.href);
+    await sleep(200);
   }
 
   function modal(title, body) {
@@ -388,16 +644,173 @@
     modal("Prompt Library", box);
   }
 
-  function archiveInfo() {
+  async function bulkArchive() {
     const box = document.createElement("div");
-    box.innerHTML = '<div class="acus-muted">Bulk Archive is planned with a review-first workflow so chats are not archived without explicit selection.</div>';
+    box.innerHTML = `
+      <div class="acus-status">Loading full chat history...</div>
+      <input class="acus-input acus-archive-search" placeholder="Filter chat titles..." disabled>
+      <div class="acus-archive-toolbar">
+        <button class="acus-secondary acus-select-visible" disabled>Select all visible</button>
+        <button class="acus-secondary acus-deselect" disabled>Deselect all</button>
+        <span class="acus-archive-count">0 selected</span>
+      </div>
+      <div class="acus-archive-list"></div>
+      <div class="acus-archive-footer">
+        <span class="acus-archive-progress">Nothing is archived until you confirm.</span>
+        <button class="acus-archive-submit" disabled>Archive selected</button>
+      </div>`;
+
+    const status = box.querySelector(".acus-status");
+    const search = box.querySelector(".acus-archive-search");
+    const list = box.querySelector(".acus-archive-list");
+    const selectVisible = box.querySelector(".acus-select-visible");
+    const deselect = box.querySelector(".acus-deselect");
+    const count = box.querySelector(".acus-archive-count");
+    const progress = box.querySelector(".acus-archive-progress");
+    const submit = box.querySelector(".acus-archive-submit");
+
     modal("Bulk Archive", box);
+
+    let chats;
+    if (cachedHistory) {
+      chats = rememberChats(getChatLinks());
+      status.textContent = `${chats.length} chats loaded`;
+    } else {
+      chats = await loadAllChats((loaded, loading) => {
+        status.textContent = loading ? `Loading chat history (${loaded})...` : `${loaded} chats loaded`;
+      });
+      chats = rememberChats(chats);
+    }
+
+    const selected = new Set();
+
+    const matchingChats = () => {
+      const query = search.value.toLowerCase().trim();
+      return chats.filter(chat => !query || chat.title.toLowerCase().includes(query));
+    };
+
+    const refreshControls = () => {
+      count.textContent = `${selected.size} selected`;
+      submit.disabled = selected.size === 0;
+      submit.textContent = selected.size ? `Archive selected (${selected.size})` : "Archive selected";
+    };
+
+    const render = () => {
+      list.replaceChildren();
+      const matches = matchingChats();
+
+      const summary = document.createElement("div");
+      summary.className = "acus-muted";
+      summary.textContent = `${matches.length} of ${chats.length} chats shown`;
+      list.append(summary);
+
+      for (const chat of matches) {
+        const row = document.createElement("label");
+        row.className = "acus-archive-row";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = selected.has(chat.href);
+        checkbox.onchange = () => {
+          if (checkbox.checked) selected.add(chat.href);
+          else selected.delete(chat.href);
+          row.classList.toggle("acus-selected", checkbox.checked);
+          refreshControls();
+        };
+
+        const title = document.createElement("span");
+        title.textContent = chat.title;
+
+        row.classList.toggle("acus-selected", checkbox.checked);
+        row.append(checkbox, title);
+        list.append(row);
+      }
+
+      if (!matches.length) {
+        const empty = document.createElement("div");
+        empty.className = "acus-muted";
+        empty.textContent = "No chats match this filter.";
+        list.append(empty);
+      }
+    };
+
+    search.disabled = false;
+    selectVisible.disabled = false;
+    deselect.disabled = false;
+
+    search.oninput = render;
+    selectVisible.onclick = () => {
+      for (const chat of matchingChats()) selected.add(chat.href);
+      render();
+      refreshControls();
+    };
+
+    deselect.onclick = () => {
+      selected.clear();
+      render();
+      refreshControls();
+    };
+
+    submit.onclick = async () => {
+      const chosen = chats.filter(chat => selected.has(chat.href));
+      if (!chosen.length) return;
+
+      const confirmed = confirm(`Archive ${chosen.length} selected ${platform()} chat${chosen.length === 1 ? "" : "s"}?`);
+      if (!confirmed) return;
+
+      search.disabled = true;
+      selectVisible.disabled = true;
+      deselect.disabled = true;
+      submit.disabled = true;
+
+      let archived = 0;
+      let failed = 0;
+      let lastError = "";
+
+      for (const chat of chosen) {
+        progress.textContent = `Archiving ${archived + failed + 1} of ${chosen.length}: ${chat.title}`;
+
+        try {
+          await archiveChat(chat);
+          archived++;
+          selected.delete(chat.href);
+        } catch (error) {
+          failed++;
+          lastError = error instanceof Error ? error.message : String(error);
+          console.error("[AI Client Utility Suite]", chat.title, error);
+        }
+      }
+
+      chats = cachedHistory ? [...cachedHistory.values()] : chats.filter(chat => !selected.has(chat.href));
+
+      if (failed) {
+        progress.textContent = `${archived} archived, ${failed} failed. ${lastError}`;
+        progress.classList.add("acus-error");
+      } else {
+        progress.textContent = `${archived} chat${archived === 1 ? "" : "s"} archived successfully.`;
+        progress.classList.remove("acus-error");
+      }
+
+      search.disabled = false;
+      selectVisible.disabled = false;
+      deselect.disabled = false;
+      render();
+      refreshControls();
+
+      for (const container of scrollContainersForChats()) {
+        container.scrollTop = 0;
+      }
+    };
+
+    render();
+    refreshControls();
+    search.focus();
   }
 
   function openMenu() {
     const box = document.createElement("div");
     box.className = "acus-menu";
-    [["🔎 Search Chats", searchChats], ["📦 Bulk Archive", archiveInfo], ["📚 Prompt Library", promptLibrary]].forEach(([label, fn]) => {
+    [["🔎 Search Chats", searchChats], ["📦 Bulk Archive", bulkArchive], ["📚 Prompt Library", promptLibrary]].forEach(([label, fn]) => {
       const b = document.createElement("button");
       b.className = "acus-menu-btn";
       b.textContent = label;
@@ -436,6 +849,7 @@
       .acus-status{margin-bottom:10px;color:#bbb}.acus-muted{color:#aaa;margin:8px 0}.acus-prompt-form{margin-bottom:18px}.acus-primary{margin-bottom:8px}
       .acus-prompt{border-top:1px solid #333;padding:14px 0}.acus-prompt strong{display:block;margin-bottom:9px}.acus-prompt-actions{display:flex;gap:7px;margin-bottom:9px}
       .acus-library-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}.acus-library-status{color:#aaa}.acus-error{color:#ff8585}
+      .acus-archive-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.acus-archive-toolbar button,.acus-archive-submit{background:#2b2b2b;color:#fff;border:1px solid #444;border-radius:10px;padding:8px 11px;cursor:pointer}.acus-archive-toolbar button:disabled,.acus-archive-submit:disabled{opacity:.5;cursor:not-allowed}.acus-archive-count{color:#aaa;margin-left:auto}.acus-archive-list{max-height:430px;overflow:auto;border:1px solid #333;border-radius:12px;padding:8px}.acus-archive-row{display:flex;align-items:center;gap:10px;padding:10px;border-radius:9px;cursor:pointer}.acus-archive-row:hover,.acus-archive-row.acus-selected{background:#2b2b2b}.acus-archive-row input{flex:0 0 auto}.acus-archive-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acus-archive-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.acus-archive-progress{color:#aaa;min-width:0}
     `;
     document.head.append(style);
 
