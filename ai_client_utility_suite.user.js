@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.4.1
+// @version      0.4.2
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -243,10 +243,10 @@
       let lastCount = collected.size;
       let lastMax = Math.max(0, container.scrollHeight - container.clientHeight);
 
-      while (stableAtBottom < 4) {
+      while (stableAtBottom < 6) {
         const max = Math.max(0, container.scrollHeight - container.clientHeight);
         container.scrollTop = Math.min(container.scrollTop + step, max);
-        await sleep(180);
+        await sleep(220);
 
         mergeChats(collected, getChatLinks());
         onProgress?.(collected.size, true);
@@ -257,7 +257,8 @@
 
         if (atBottom && !grew) {
           stableAtBottom++;
-          await sleep(220);
+          await sleep(300);
+          mergeChats(collected, getChatLinks());
         } else {
           stableAtBottom = 0;
         }
@@ -1424,23 +1425,17 @@
     activeFilters = loadFilters();
     document.getElementById(APP_ID + "-modal")?.remove();
 
-    let chats;
-    if (cachedHistory) {
-      chats = rememberChats(getChatLinks());
-    } else {
-      const loading = document.createElement("div");
-      loading.innerHTML = '<div class="acus-status">Loading full chat history...</div>';
-      modal("Chat Cleaner", loading);
-      const status = loading.querySelector(".acus-status");
+    const loading = document.createElement("div");
+    loading.innerHTML = '<div class="acus-status">Loading full chat history...</div>';
+    modal("Chat Cleaner", loading);
+    const status = loading.querySelector(".acus-status");
 
-      chats = await loadAllChats((count, isLoading) => {
-        status.textContent = isLoading ? `Loading chat history (${count})...` : `${count} chats loaded`;
-      });
+    const scannedChats = await loadAllChats((count, isLoading) => {
+      status.textContent = isLoading ? `Loading chat history (${count})...` : `${count} chats loaded`;
+    });
 
-      chats = rememberChats(chats);
-      document.getElementById(APP_ID + "-modal")?.remove();
-    }
-
+    const chats = rememberChats(scannedChats);
+    document.getElementById(APP_ID + "-modal")?.remove();
     makeOverlay(chats.map(classify));
   }
 
