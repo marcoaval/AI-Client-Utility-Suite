@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      0.4.0
+// @version      0.4.1
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -127,8 +127,38 @@
       ...chat,
       matches,
       protectedMatches,
-      suggested: matches.length > 0 && protectedMatches.length === 0
+      suggested: matches.length > 0 && protectedMatches.length === 0,
+      likelyPersonal: matches.length > 0 && protectedMatches.length === 0
     };
+  }
+
+  function defaultFilters() {
+    return {
+      suggested: [...DEFAULT_CLEANER_FILTERS.suggested],
+      protected: [...DEFAULT_CLEANER_FILTERS.protected]
+    };
+  }
+
+  function loadFilters() {
+    return loadCleanerFilters();
+  }
+
+  let activeFilters = loadFilters();
+
+  function saveFilters(filters) {
+    activeFilters = {
+      suggested: cleanFilterList(filters.suggested),
+      protected: cleanFilterList(filters.protected)
+    };
+    saveCleanerFilters(activeFilters);
+  }
+
+  function uniqueChats() {
+    return getChatLinks();
+  }
+
+  function classify(chat) {
+    return classifyForCleaner(chat, activeFilters);
   }
 
   function chatLinkElements() {
@@ -768,233 +798,650 @@
     modal("Prompt Library", box);
   }
 
+  function detectDarkMode() {
+    const background = getComputedStyle(document.body).backgroundColor;
+    const values = background.match(/[\d.]+/g);
+
+    if (values && values.length >= 3) {
+      const [r, g, b] = values.slice(0, 3).map(Number);
+      return (0.299 * r + 0.587 * g + 0.114 * b) < 128;
+    }
+
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches || false;
+  }
+
+  function cleanerTheme() {
+    const dark = detectDarkMode();
+
+    return dark ? {
+      panel: '#18181b',
+      surface: '#222226',
+      surfaceHover: '#29292e',
+      border: '#34343a',
+      borderStrong: '#45454d',
+      text: '#f4f4f5',
+      muted: '#a1a1aa',
+      subtle: '#71717a',
+      accent: '#93a4ff',
+      accentSoft: 'rgba(147,164,255,.13)',
+      accentBorder: 'rgba(147,164,255,.34)',
+      danger: '#f87171',
+      dangerHover: '#ef4444',
+      dangerSoft: 'rgba(248,113,113,.12)',
+      success: '#86efac',
+      successSoft: 'rgba(134,239,172,.10)',
+      shadow: '0 24px 80px rgba(0,0,0,.48)',
+      overlay: 'rgba(8,8,10,.70)'
+    } : {
+      panel: '#ffffff',
+      surface: '#f7f7f8',
+      surfaceHover: '#f1f1f3',
+      border: '#e4e4e7',
+      borderStrong: '#d4d4d8',
+      text: '#18181b',
+      muted: '#71717a',
+      subtle: '#a1a1aa',
+      accent: '#5968d9',
+      accentSoft: 'rgba(89,104,217,.08)',
+      accentBorder: 'rgba(89,104,217,.24)',
+      danger: '#dc2626',
+      dangerHover: '#b91c1c',
+      dangerSoft: 'rgba(220,38,38,.07)',
+      success: '#15803d',
+      successSoft: 'rgba(21,128,61,.07)',
+      shadow: '0 24px 80px rgba(24,24,27,.18)',
+      overlay: 'rgba(24,24,27,.48)'
+    };
+  }
+
+  function makeOverlay(chats) {
+    document.getElementById('vanick-cleaner-overlay')?.remove();
+
+    const current = platform();
+    const theme = cleanerTheme();
+    const overlay = document.createElement('div');
+    overlay.id = 'vanick-cleaner-overlay';
+    overlay.style.cssText = `
+      --vc-panel:${theme.panel};
+      --vc-surface:${theme.surface};
+      --vc-surface-hover:${theme.surfaceHover};
+      --vc-border:${theme.border};
+      --vc-border-strong:${theme.borderStrong};
+      --vc-text:${theme.text};
+      --vc-muted:${theme.muted};
+      --vc-subtle:${theme.subtle};
+      --vc-accent:${theme.accent};
+      --vc-accent-soft:${theme.accentSoft};
+      --vc-accent-border:${theme.accentBorder};
+      --vc-danger:${theme.danger};
+      --vc-danger-hover:${theme.dangerHover};
+      --vc-danger-soft:${theme.dangerSoft};
+      --vc-success:${theme.success};
+      --vc-success-soft:${theme.successSoft};
+      position:fixed;
+      inset:0;
+      z-index:2147483647;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      background:${theme.overlay};
+      backdrop-filter:blur(8px);
+      -webkit-backdrop-filter:blur(8px);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    `;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #vanick-cleaner-overlay *{box-sizing:border-box}
+      #vanick-cleaner-overlay .vc-panel{width:min(860px,96vw);max-height:min(86vh,900px);display:flex;flex-direction:column;overflow:hidden;color:var(--vc-text);background:var(--vc-panel);border:1px solid var(--vc-border);border-radius:20px;box-shadow:${theme.shadow}}
+      #vanick-cleaner-overlay .vc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:22px 24px 18px;border-bottom:1px solid var(--vc-border)}
+      #vanick-cleaner-overlay .vc-brand{display:flex;align-items:flex-start;gap:13px;min-width:0}
+      #vanick-cleaner-overlay .vc-icon{width:42px;height:42px;flex:0 0 auto;display:grid;place-items:center;border:1px solid var(--vc-accent-border);border-radius:12px;background:var(--vc-accent-soft);font-size:20px}
+      #vanick-cleaner-overlay .vc-title-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:1px 0 4px}
+      #vanick-cleaner-overlay .vc-title{font-size:20px;line-height:1.25;font-weight:750;letter-spacing:-.02em}
+      #vanick-cleaner-overlay .vc-platform{display:inline-flex;align-items:center;height:22px;padding:0 8px;border:1px solid var(--vc-border);border-radius:999px;color:var(--vc-muted);background:var(--vc-surface);font-size:11px;font-weight:700;letter-spacing:.02em}
+      #vanick-cleaner-overlay .vc-subtitle{max-width:650px;color:var(--vc-muted);font-size:12.5px;line-height:1.55}
+      #vanick-cleaner-overlay .vc-icon-button{width:34px;height:34px;flex:0 0 auto;display:grid;place-items:center;border:1px solid transparent;border-radius:10px;color:var(--vc-muted);background:transparent;font-size:20px;line-height:1;cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease}
+      #vanick-cleaner-overlay .vc-icon-button:hover{color:var(--vc-text);background:var(--vc-surface);border-color:var(--vc-border)}
+      #vanick-cleaner-overlay .vc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 24px;border-bottom:1px solid var(--vc-border);background:var(--vc-panel)}
+      #vanick-cleaner-overlay .vc-summary{color:var(--vc-muted);font-size:12px;font-weight:650}
+      #vanick-cleaner-overlay .vc-toolbar-actions{display:flex;gap:7px;flex-wrap:wrap}
+      #vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{min-height:120px;overflow:auto;padding:14px 16px 16px;scrollbar-color:var(--vc-border-strong) transparent}
+      #vanick-cleaner-overlay .vc-list{display:grid;gap:8px}
+      #vanick-cleaner-overlay .vc-row{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;padding:12px 13px;border:1px solid var(--vc-border);border-radius:12px;background:var(--vc-surface);cursor:pointer;transition:background .14s ease,border-color .14s ease,transform .14s ease}
+      #vanick-cleaner-overlay .vc-row:hover{background:var(--vc-surface-hover);border-color:var(--vc-border-strong)}
+      #vanick-cleaner-overlay .vc-row.vc-selected{border-color:var(--vc-accent-border);background:var(--vc-accent-soft)}
+      #vanick-cleaner-overlay .vc-checkbox{width:17px;height:17px;margin:2px 0 0;accent-color:var(--vc-accent);cursor:pointer}
+      #vanick-cleaner-overlay .vc-chat-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+      #vanick-cleaner-overlay .vc-chat-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vc-text);font-size:13.5px;line-height:1.35;font-weight:680}
+      #vanick-cleaner-overlay .vc-pill{flex:0 0 auto;display:inline-flex;align-items:center;height:21px;padding:0 7px;border-radius:999px;font-size:10.5px;line-height:1;font-weight:750}
+      #vanick-cleaner-overlay .vc-pill-personal{color:var(--vc-accent);border:1px solid var(--vc-accent-border);background:var(--vc-accent-soft)}
+      #vanick-cleaner-overlay .vc-pill-protected{color:var(--vc-success);border:1px solid color-mix(in srgb,var(--vc-success) 30%,transparent);background:var(--vc-success-soft)}
+      #vanick-cleaner-overlay .vc-pill-review{color:var(--vc-muted);border:1px solid var(--vc-border);background:var(--vc-panel)}
+      #vanick-cleaner-overlay .vc-detail{margin-top:4px;color:var(--vc-muted);font-size:11.5px;line-height:1.4}
+      #vanick-cleaner-overlay .vc-empty{margin:18px 8px;padding:28px 18px;text-align:center;color:var(--vc-muted);border:1px dashed var(--vc-border-strong);border-radius:14px;background:var(--vc-surface);font-size:13px}
+      #vanick-cleaner-overlay .vc-filter-manager{display:grid;gap:12px}
+      #vanick-cleaner-overlay .vc-selection-review{display:grid;gap:10px}
+      #vanick-cleaner-overlay .vc-selection-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:2px 2px 4px}
+      #vanick-cleaner-overlay .vc-selection-title{color:var(--vc-text);font-size:14px;font-weight:750}
+      #vanick-cleaner-overlay .vc-selection-text{margin-top:3px;color:var(--vc-muted);font-size:11.5px;line-height:1.5}
+      #vanick-cleaner-overlay .vc-filter-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:2px 2px 4px}
+      #vanick-cleaner-overlay .vc-filter-intro-title{color:var(--vc-text);font-size:14px;font-weight:750}
+      #vanick-cleaner-overlay .vc-filter-intro-text{margin-top:3px;max-width:610px;color:var(--vc-muted);font-size:11.5px;line-height:1.5}
+      #vanick-cleaner-overlay .vc-filter-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+      #vanick-cleaner-overlay .vc-filter-card{min-width:0;padding:14px;border:1px solid var(--vc-border);border-radius:14px;background:var(--vc-surface)}
+      #vanick-cleaner-overlay .vc-filter-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+      #vanick-cleaner-overlay .vc-filter-card-title{color:var(--vc-text);font-size:13px;font-weight:750}
+      #vanick-cleaner-overlay .vc-filter-count{color:var(--vc-muted);font-size:10.5px;font-weight:700}
+      #vanick-cleaner-overlay .vc-filter-description{min-height:34px;margin-bottom:10px;color:var(--vc-muted);font-size:11px;line-height:1.5}
+      #vanick-cleaner-overlay .vc-filter-input-row{display:flex;gap:7px;margin-bottom:10px}
+      #vanick-cleaner-overlay .vc-input{min-width:0;flex:1 1 auto;height:34px;padding:7px 9px;border:1px solid var(--vc-border);border-radius:9px;outline:none;color:var(--vc-text);background:var(--vc-panel);font:inherit;font-size:11.5px}
+      #vanick-cleaner-overlay .vc-input:focus{border-color:var(--vc-accent);box-shadow:0 0 0 3px var(--vc-accent-soft)}
+      #vanick-cleaner-overlay .vc-chip-list{display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow:auto}
+      #vanick-cleaner-overlay .vc-chip{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%;padding:5px 7px 5px 8px;border:1px solid var(--vc-border);border-radius:999px;color:var(--vc-text);background:var(--vc-panel);font-size:10.5px;line-height:1}
+      #vanick-cleaner-overlay .vc-chip-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      #vanick-cleaner-overlay .vc-chip-remove{width:16px;height:16px;display:grid;place-items:center;flex:0 0 auto;padding:0;border:0;border-radius:999px;color:var(--vc-muted);background:transparent;cursor:pointer;font-size:13px;line-height:1}
+      #vanick-cleaner-overlay .vc-chip-remove:hover{color:var(--vc-danger);background:var(--vc-danger-soft)}
+      #vanick-cleaner-overlay .vc-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 20px 16px;border-top:1px solid var(--vc-border);background:var(--vc-panel)}
+      #vanick-cleaner-overlay .vc-status{flex:1 1 300px;min-height:18px;color:var(--vc-muted);font-size:11.5px;line-height:1.45}
+      #vanick-cleaner-overlay .vc-status[data-state="error"]{color:var(--vc-danger)}
+      #vanick-cleaner-overlay .vc-status[data-state="success"]{color:var(--vc-success)}
+      #vanick-cleaner-overlay .vc-footer-actions{display:flex;gap:8px;margin-left:auto}
+      #vanick-cleaner-overlay .vc-button{min-height:34px;padding:7px 11px;border-radius:9px;border:1px solid var(--vc-border);color:var(--vc-text);background:var(--vc-surface);font:inherit;font-size:11.5px;line-height:1;font-weight:700;cursor:pointer;transition:background .15s ease,border-color .15s ease,transform .1s ease,opacity .15s ease}
+      #vanick-cleaner-overlay .vc-button:hover:not(:disabled){background:var(--vc-surface-hover);border-color:var(--vc-border-strong)}
+      #vanick-cleaner-overlay .vc-button:active:not(:disabled){transform:translateY(1px)}
+      #vanick-cleaner-overlay .vc-button:disabled{opacity:.45;cursor:not-allowed}
+      #vanick-cleaner-overlay .vc-button-danger{color:#fff;border-color:var(--vc-danger);background:var(--vc-danger)}
+      #vanick-cleaner-overlay .vc-button-danger:hover:not(:disabled){border-color:var(--vc-danger-hover);background:var(--vc-danger-hover)}
+      #vanick-cleaner-overlay .vc-button-accent{color:#fff;border-color:var(--vc-accent);background:var(--vc-accent)}
+      @media (max-width:640px){#vanick-cleaner-overlay{padding:10px}#vanick-cleaner-overlay .vc-panel{max-height:92vh;border-radius:16px}#vanick-cleaner-overlay .vc-header{padding:18px 16px 14px}#vanick-cleaner-overlay .vc-toolbar{padding:10px 16px}#vanick-cleaner-overlay .vc-list-wrap,#vanick-cleaner-overlay .vc-filter-manager,#vanick-cleaner-overlay .vc-selection-review{padding:10px}#vanick-cleaner-overlay .vc-filter-grid{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-footer{padding:12px}#vanick-cleaner-overlay .vc-chat-head{align-items:flex-start}#vanick-cleaner-overlay .vc-chat-title{white-space:normal}}
+    `;
+    overlay.appendChild(style);
+
+    const panel = document.createElement('div');
+    panel.className = 'vc-panel';
+
+    const header = document.createElement('div');
+    header.className = 'vc-header';
+
+    const brand = document.createElement('div');
+    brand.className = 'vc-brand';
+
+    const icon = document.createElement('div');
+    icon.className = 'vc-icon';
+    icon.textContent = '🧹';
+
+    const headingText = document.createElement('div');
+    headingText.style.minWidth = '0';
+    headingText.innerHTML = `
+      <div class="vc-title-row"><div class="vc-title">Chat Cleaner</div><span class="vc-platform">${escapeHtml(current)}</span></div>
+      <div class="vc-subtitle">Review conversations found across the full scrollable chat history before deleting. Suggested filters can be selected manually, while protected filters prevent automatic selection.</div>
+    `;
+
+    brand.append(icon, headingText);
+
+    const closeIcon = document.createElement('button');
+    closeIcon.type = 'button';
+    closeIcon.className = 'vc-icon-button';
+    closeIcon.setAttribute('aria-label', 'Close');
+    closeIcon.textContent = '×';
+    closeIcon.onclick = () => overlay.remove();
+
+    header.append(brand, closeIcon);
+    panel.appendChild(header);
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'vc-toolbar';
+
+    const summary = document.createElement('div');
+    summary.className = 'vc-summary';
+
+    const toolbarActions = document.createElement('div');
+    toolbarActions.className = 'vc-toolbar-actions';
+
+    const listWrap = document.createElement('div');
+    listWrap.className = 'vc-list-wrap';
+
+    const list = document.createElement('div');
+    list.className = 'vc-list';
+
+    const filterManager = document.createElement('div');
+    filterManager.className = 'vc-filter-manager';
+    filterManager.hidden = true;
+
+    const selectionReview = document.createElement('div');
+    selectionReview.className = 'vc-selection-review';
+    selectionReview.hidden = true;
+
+    const rows = [];
+    let remove = null;
+    let footer = null;
+    let filterMode = false;
+    let selectionMode = false;
+
+    function refreshSelection() {
+      const selected = rows.filter(item => item.checkbox.checked).length;
+      summary.textContent = filterMode ? `${activeFilters.suggested.length} suggested filters · ${activeFilters.protected.length} protected filters` : `${chats.length} loaded · ${selected} selected`;
+      for (const item of rows) item.row.classList.toggle('vc-selected', item.checkbox.checked);
+      if (remove) {
+        remove.textContent = selected ? `Delete selected (${selected})` : 'Delete selected';
+        remove.disabled = selected === 0;
+      }
+      if (reviewSelected && !selectionMode) {
+        reviewSelected.textContent = selected ? `Review selected (${selected})` : 'Review selected';
+        reviewSelected.disabled = selected === 0;
+      }
+    }
+
+    for (const chat of chats) {
+      const row = document.createElement('label');
+      row.className = 'vc-row';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'vc-checkbox';
+      checkbox.checked = false;
+      checkbox.addEventListener('change', refreshSelection);
+
+      const info = document.createElement('div');
+      info.style.minWidth = '0';
+
+      const detailParts = [];
+      if (chat.matches.length) detailParts.push(`Matched: ${chat.matches.join(', ')}`);
+      else detailParts.push('No suggested cleanup filter match');
+      if (chat.protectedMatches.length) detailParts.push(`Protected: ${chat.protectedMatches.join(', ')}`);
+
+      const statusClass = chat.protectedMatches.length ? 'vc-pill-protected' : chat.likelyPersonal ? 'vc-pill-personal' : 'vc-pill-review';
+      const statusText = chat.protectedMatches.length ? 'Protected' : chat.likelyPersonal ? 'Suggested' : 'Review';
+
+      info.innerHTML = `<div class="vc-chat-head"><div class="vc-chat-title">${escapeHtml(chat.title)}</div><span class="vc-pill ${statusClass}">${statusText}</span></div><div class="vc-detail">${escapeHtml(detailParts.join(' · '))}</div>`;
+
+      row.append(checkbox, info);
+      list.appendChild(row);
+      rows.push({ chat, checkbox, row });
+    }
+
+    if (!chats.length) {
+      const empty = document.createElement('div');
+      empty.className = 'vc-empty';
+      empty.textContent = 'No loaded chats were found. Open the sidebar and try again.';
+      list.appendChild(empty);
+    }
+
+    listWrap.appendChild(list);
+
+    const reviewSelected = button('Review selected', 'secondary');
+
+    function renderSelectedReview() {
+      selectionReview.replaceChildren();
+
+      const head = document.createElement('div');
+      head.className = 'vc-selection-head';
+      head.innerHTML = '<div><div class="vc-selection-title">Selected chats</div><div class="vc-selection-text">Only chats currently selected for deletion are shown here. Uncheck anything you want to keep.</div></div>';
+      selectionReview.appendChild(head);
+
+      const selectedRows = rows.filter(item => item.checkbox.checked);
+      if (!selectedRows.length) {
+        const empty = document.createElement('div');
+        empty.className = 'vc-empty';
+        empty.textContent = 'No chats are selected.';
+        selectionReview.appendChild(empty);
+        return;
+      }
+
+      const selectedList = document.createElement('div');
+      selectedList.className = 'vc-list';
+
+      for (const item of selectedRows) {
+        const row = document.createElement('label');
+        row.className = 'vc-row vc-selected';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'vc-checkbox';
+        checkbox.checked = true;
+        checkbox.addEventListener('change', () => {
+          item.checkbox.checked = checkbox.checked;
+          refreshSelection();
+          renderSelectedReview();
+        });
+
+        const info = document.createElement('div');
+        info.style.minWidth = '0';
+        info.innerHTML = `<div class="vc-chat-head"><div class="vc-chat-title">${escapeHtml(item.chat.title)}</div><span class="vc-pill vc-pill-personal">Selected</span></div>`;
+
+        row.append(checkbox, info);
+        selectedList.appendChild(row);
+      }
+
+      selectionReview.appendChild(selectedList);
+    }
+
+    function showChatList() {
+      filterMode = false;
+      selectionMode = false;
+      filterManager.hidden = true;
+      selectionReview.hidden = true;
+      listWrap.hidden = false;
+      if (footer) footer.hidden = false;
+      selectSuggested.hidden = false;
+      selectAll.hidden = false;
+      deselectAll.hidden = false;
+      reviewSelected.hidden = false;
+      manageFilters.textContent = 'Manage filters';
+      refreshSelection();
+    }
+
+    function showSelectedReview() {
+      filterMode = false;
+      selectionMode = true;
+      filterManager.hidden = true;
+      listWrap.hidden = true;
+      selectionReview.hidden = false;
+      if (footer) footer.hidden = false;
+      selectSuggested.hidden = true;
+      selectAll.hidden = true;
+      deselectAll.hidden = true;
+      manageFilters.hidden = true;
+      reviewSelected.hidden = false;
+      reviewSelected.textContent = 'Back to chats';
+      reviewSelected.disabled = false;
+      renderSelectedReview();
+      refreshSelection();
+    }
+
+    reviewSelected.onclick = () => {
+      if (selectionMode) {
+        manageFilters.hidden = false;
+        showChatList();
+      } else {
+        showSelectedReview();
+      }
+    };
+
+    const selectSuggested = button('Select suggested chats', 'secondary');
+    selectSuggested.onclick = () => {
+      rows.forEach(item => { item.checkbox.checked = item.chat.likelyPersonal; });
+      refreshSelection();
+      if (rows.some(item => item.checkbox.checked)) showSelectedReview();
+    };
+
+    const selectAll = button('Select all', 'secondary');
+    selectAll.onclick = () => {
+      rows.forEach(item => { item.checkbox.checked = true; });
+      refreshSelection();
+    };
+
+    const deselectAll = button('Deselect all', 'secondary');
+    deselectAll.onclick = () => {
+      rows.forEach(item => { item.checkbox.checked = false; });
+      refreshSelection();
+    };
+
+    const manageFilters = button('Manage filters', 'secondary');
+
+    function renderFilterManager() {
+      filterManager.replaceChildren();
+
+      const intro = document.createElement('div');
+      intro.className = 'vc-filter-intro';
+
+      const introText = document.createElement('div');
+      introText.innerHTML = `<div class="vc-filter-intro-title">Manage title filters</div><div class="vc-filter-intro-text">Add words or phrases without editing the script. Suggested filters preselect matching chats. Protected filters keep matching chats from being preselected.</div>`;
+
+      const reset = button('Reset defaults', 'secondary');
+      reset.onclick = () => {
+        saveFilters(defaultFilters());
+        renderFilterManager();
+        refreshSelection();
+      };
+
+      intro.append(introText, reset);
+      filterManager.appendChild(intro);
+
+      const grid = document.createElement('div');
+      grid.className = 'vc-filter-grid';
+
+      function filterCard(type, title, description, placeholder) {
+        const card = document.createElement('div');
+        card.className = 'vc-filter-card';
+
+        const head = document.createElement('div');
+        head.className = 'vc-filter-card-head';
+        head.innerHTML = `<div class="vc-filter-card-title">${escapeHtml(title)}</div><div class="vc-filter-count">${activeFilters[type].length}</div>`;
+
+        const descriptionElement = document.createElement('div');
+        descriptionElement.className = 'vc-filter-description';
+        descriptionElement.textContent = description;
+
+        const inputRow = document.createElement('div');
+        inputRow.className = 'vc-filter-input-row';
+
+        const input = document.createElement('input');
+        input.className = 'vc-input';
+        input.type = 'text';
+        input.placeholder = placeholder;
+        input.autocomplete = 'off';
+
+        const add = button('Add', 'accent');
+
+        function addValue() {
+          const value = normalize(input.value);
+          if (!value || activeFilters[type].includes(value)) {
+            input.value = '';
+            return;
+          }
+          saveFilters({ ...activeFilters, [type]: [...activeFilters[type], value] });
+          renderFilterManager();
+          refreshSelection();
+        }
+
+        add.onclick = addValue;
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            addValue();
+          }
+        });
+
+        inputRow.append(input, add);
+
+        const chips = document.createElement('div');
+        chips.className = 'vc-chip-list';
+
+        for (const value of activeFilters[type]) {
+          const chip = document.createElement('div');
+          chip.className = 'vc-chip';
+
+          const text = document.createElement('span');
+          text.className = 'vc-chip-text';
+          text.textContent = value;
+          text.title = value;
+
+          const removeChip = document.createElement('button');
+          removeChip.type = 'button';
+          removeChip.className = 'vc-chip-remove';
+          removeChip.setAttribute('aria-label', `Remove ${value}`);
+          removeChip.textContent = '×';
+          removeChip.onclick = () => {
+            saveFilters({ ...activeFilters, [type]: activeFilters[type].filter(item => item !== value) });
+            renderFilterManager();
+            refreshSelection();
+          };
+
+          chip.append(text, removeChip);
+          chips.appendChild(chip);
+        }
+
+        card.append(head, descriptionElement, inputRow, chips);
+        return card;
+      }
+
+      grid.append(
+        filterCard('suggested', 'Suggested cleanup filters', 'Chats whose titles match these words or phrases are suggested and preselected unless a protected filter also matches.', 'Add a word or phrase'),
+        filterCard('protected', 'Protected filters', 'Chats whose titles match these words or phrases stay unselected even when a suggested cleanup filter also matches.', 'Add a word or phrase')
+      );
+
+      filterManager.appendChild(grid);
+
+      const doneRow = document.createElement('div');
+      doneRow.style.cssText = 'display:flex;justify-content:flex-end;padding-top:2px;';
+      const done = button('Done', 'accent');
+      done.onclick = () => {
+        const chatsToShow = cachedHistory ? rememberChats(uniqueChats()) : uniqueChats();
+        makeOverlay(chatsToShow.map(classify));
+      };
+      doneRow.appendChild(done);
+      filterManager.appendChild(doneRow);
+    }
+
+    manageFilters.onclick = () => {
+      if (selectionMode) {
+        manageFilters.hidden = false;
+        showChatList();
+        return;
+      }
+
+      filterMode = !filterMode;
+      selectionMode = false;
+      filterManager.hidden = !filterMode;
+      selectionReview.hidden = true;
+      listWrap.hidden = filterMode;
+      if (footer) footer.hidden = filterMode;
+      selectSuggested.hidden = filterMode;
+      selectAll.hidden = filterMode;
+      deselectAll.hidden = filterMode;
+      reviewSelected.hidden = filterMode;
+      manageFilters.textContent = filterMode ? 'Back to chats' : 'Manage filters';
+
+      if (filterMode) renderFilterManager();
+      else {
+        const chatsToShow = cachedHistory ? rememberChats(uniqueChats()) : uniqueChats();
+        makeOverlay(chatsToShow.map(classify));
+      }
+
+      refreshSelection();
+    };
+
+    toolbarActions.append(manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll);
+    toolbar.append(summary, toolbarActions);
+    panel.append(toolbar, listWrap, filterManager, selectionReview);
+
+    footer = document.createElement('div');
+    footer.className = 'vc-footer';
+
+    const status = document.createElement('div');
+    status.className = 'vc-status';
+    status.textContent = 'Nothing is deleted until you confirm.';
+
+    const footerActions = document.createElement('div');
+    footerActions.className = 'vc-footer-actions';
+
+    const close = button('Cancel', 'secondary');
+    close.onclick = () => overlay.remove();
+
+    remove = button('Delete selected', 'danger');
+    remove.onclick = async () => {
+      const selected = rows.filter(item => item.checkbox.checked);
+      if (!selected.length) {
+        status.dataset.state = 'error';
+        status.textContent = 'Nothing selected.';
+        return;
+      }
+
+      const confirmed = confirm(`Delete ${selected.length} selected ${current} chat(s)?\n\nThis cannot be undone.`);
+      if (!confirmed) return;
+
+      const controls = [remove, close, manageFilters, reviewSelected, selectSuggested, selectAll, deselectAll];
+      for (const control of controls) control.disabled = true;
+
+      let deleted = 0;
+      let failed = 0;
+      let lastError = '';
+
+      status.dataset.state = '';
+      for (const item of selected) {
+        status.textContent = `Deleting ${deleted + failed + 1} of ${selected.length} · ${item.chat.title}`;
+        try {
+          await deleteChat(item.chat);
+          forgetChat(item.chat.href);
+          deleted++;
+          item.row.style.opacity = '.38';
+          item.checkbox.checked = false;
+        } catch (error) {
+          failed++;
+          lastError = error instanceof Error ? error.message : String(error);
+          item.row.style.borderColor = 'var(--vc-danger)';
+          console.error('[Chat Cleaner]', item.chat.title, error);
+        }
+      }
+
+      if (failed) {
+        status.dataset.state = 'error';
+        status.textContent = `${deleted} deleted · ${failed} failed · ${lastError}`;
+      } else {
+        status.dataset.state = 'success';
+        status.textContent = `${deleted} chat${deleted === 1 ? '' : 's'} deleted successfully.`;
+      }
+
+      for (const control of controls) control.disabled = false;
+      refreshSelection();
+    };
+
+    footerActions.append(close, remove);
+    footer.append(status, footerActions);
+    panel.appendChild(footer);
+
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) overlay.remove();
+    });
+
+    document.body.appendChild(overlay);
+    refreshSelection();
+  }
+
+  function button(text, variant = 'secondary') {
+    const element = document.createElement('button');
+    element.type = 'button';
+    element.textContent = text;
+    element.className = `vc-button${variant === 'danger' ? ' vc-button-danger' : variant === 'accent' ? ' vc-button-accent' : ''}`;
+    return element;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+
   async function chatCleaner() {
-    const box = document.createElement("div");
-    box.innerHTML = `
-      <div class="acus-status">Loading full chat history...</div>
-      <div class="acus-cleaner-toolbar">
-        <button class="acus-secondary acus-cleaner-suggested" disabled>Select suggested</button>
-        <button class="acus-secondary acus-cleaner-all" disabled>Select all</button>
-        <button class="acus-secondary acus-cleaner-none" disabled>Deselect all</button>
-        <button class="acus-secondary acus-cleaner-filters" disabled>Manage filters</button>
-        <span class="acus-cleaner-count">0 selected</span>
-      </div>
-      <input class="acus-input acus-cleaner-search" placeholder="Filter chat titles..." disabled>
-      <div class="acus-cleaner-list"></div>
-      <div class="acus-cleaner-footer">
-        <span class="acus-cleaner-progress">Nothing is deleted until you confirm.</span>
-        <button class="acus-cleaner-delete" disabled>Delete selected</button>
-      </div>`;
-
-    const status = box.querySelector(".acus-status");
-    const search = box.querySelector(".acus-cleaner-search");
-    const list = box.querySelector(".acus-cleaner-list");
-    const selectSuggested = box.querySelector(".acus-cleaner-suggested");
-    const selectAll = box.querySelector(".acus-cleaner-all");
-    const deselectAll = box.querySelector(".acus-cleaner-none");
-    const manageFilters = box.querySelector(".acus-cleaner-filters");
-    const count = box.querySelector(".acus-cleaner-count");
-    const progress = box.querySelector(".acus-cleaner-progress");
-    const remove = box.querySelector(".acus-cleaner-delete");
-
-    modal("Chat Cleaner", box);
+    activeFilters = loadFilters();
+    document.getElementById(APP_ID + "-modal")?.remove();
 
     let chats;
     if (cachedHistory) {
       chats = rememberChats(getChatLinks());
-      status.textContent = `${chats.length} chats loaded`;
     } else {
-      chats = await loadAllChats((loaded, loading) => {
-        status.textContent = loading ? `Loading chat history (${loaded})...` : `${loaded} chats loaded`;
+      const loading = document.createElement("div");
+      loading.innerHTML = '<div class="acus-status">Loading full chat history...</div>';
+      modal("Chat Cleaner", loading);
+      const status = loading.querySelector(".acus-status");
+
+      chats = await loadAllChats((count, isLoading) => {
+        status.textContent = isLoading ? `Loading chat history (${count})...` : `${count} chats loaded`;
       });
+
       chats = rememberChats(chats);
+      document.getElementById(APP_ID + "-modal")?.remove();
     }
 
-    let filters = loadCleanerFilters();
-    const selected = new Set();
-
-    const classified = () => chats.map(chat => classifyForCleaner(chat, filters));
-    const visibleChats = () => {
-      const query = search.value.toLowerCase().trim();
-      return classified().filter(chat => !query || chat.title.toLowerCase().includes(query));
-    };
-
-    const refreshControls = () => {
-      count.textContent = `${selected.size} selected`;
-      remove.disabled = selected.size === 0;
-      remove.textContent = selected.size ? `Delete selected (${selected.size})` : "Delete selected";
-    };
-
-    const render = () => {
-      list.replaceChildren();
-      const shown = visibleChats();
-
-      const summary = document.createElement("div");
-      summary.className = "acus-muted";
-      summary.textContent = `${shown.length} of ${chats.length} chats shown`;
-      list.append(summary);
-
-      for (const chat of shown) {
-        const row = document.createElement("label");
-        row.className = "acus-cleaner-row";
-
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = selected.has(chat.href);
-        checkbox.onchange = () => {
-          if (checkbox.checked) selected.add(chat.href);
-          else selected.delete(chat.href);
-          row.classList.toggle("acus-selected", checkbox.checked);
-          refreshControls();
-        };
-
-        const info = document.createElement("div");
-        info.className = "acus-cleaner-info";
-
-        const title = document.createElement("div");
-        title.className = "acus-cleaner-title";
-        title.textContent = chat.title;
-
-        const detail = document.createElement("div");
-        detail.className = "acus-muted";
-        if (chat.protectedMatches.length) detail.textContent = `Protected: ${chat.protectedMatches.join(", ")}`;
-        else if (chat.matches.length) detail.textContent = `Suggested: ${chat.matches.join(", ")}`;
-        else detail.textContent = "No suggested filter match";
-
-        info.append(title, detail);
-        row.classList.toggle("acus-selected", checkbox.checked);
-        row.append(checkbox, info);
-        list.append(row);
-      }
-    };
-
-    function openFilterManager() {
-      const panel = document.createElement("div");
-      panel.innerHTML = `
-        <div class="acus-filter-section">
-          <strong>Suggested filters</strong>
-          <div class="acus-muted">Matching chats can be selected with Select suggested.</div>
-          <input class="acus-input acus-filter-suggested" value="${filters.suggested.join(", ")}">
-        </div>
-        <div class="acus-filter-section">
-          <strong>Protected filters</strong>
-          <div class="acus-muted">Matching chats stay out of suggested selections.</div>
-          <input class="acus-input acus-filter-protected" value="${filters.protected.join(", ")}">
-        </div>
-        <div class="acus-filter-actions">
-          <button class="acus-secondary acus-filter-reset">Reset defaults</button>
-          <button class="acus-primary acus-filter-save">Save filters</button>
-        </div>`;
-
-      const suggestedInput = panel.querySelector(".acus-filter-suggested");
-      const protectedInput = panel.querySelector(".acus-filter-protected");
-
-      panel.querySelector(".acus-filter-reset").onclick = () => {
-        suggestedInput.value = DEFAULT_CLEANER_FILTERS.suggested.join(", ");
-        protectedInput.value = DEFAULT_CLEANER_FILTERS.protected.join(", ");
-      };
-
-      panel.querySelector(".acus-filter-save").onclick = () => {
-        filters = {
-          suggested: cleanFilterList(suggestedInput.value.split(",")),
-          protected: cleanFilterList(protectedInput.value.split(","))
-        };
-        saveCleanerFilters(filters);
-        modal("Chat Cleaner", box);
-        render();
-        refreshControls();
-      };
-
-      modal("Manage Cleaner Filters", panel);
-    }
-
-    search.disabled = false;
-    selectSuggested.disabled = false;
-    selectAll.disabled = false;
-    deselectAll.disabled = false;
-    manageFilters.disabled = false;
-
-    search.oninput = render;
-
-    selectSuggested.onclick = () => {
-      selected.clear();
-      for (const chat of classified()) {
-        if (chat.suggested) selected.add(chat.href);
-      }
-      render();
-      refreshControls();
-    };
-
-    selectAll.onclick = () => {
-      for (const chat of visibleChats()) selected.add(chat.href);
-      render();
-      refreshControls();
-    };
-
-    deselectAll.onclick = () => {
-      selected.clear();
-      render();
-      refreshControls();
-    };
-
-    manageFilters.onclick = openFilterManager;
-
-    remove.onclick = async () => {
-      const chosen = chats.filter(chat => selected.has(chat.href));
-      if (!chosen.length) return;
-
-      const confirmed = confirm(`Delete ${chosen.length} selected ${platform()} chat${chosen.length === 1 ? "" : "s"}?\n\nThis cannot be undone.`);
-      if (!confirmed) return;
-
-      search.disabled = true;
-      selectSuggested.disabled = true;
-      selectAll.disabled = true;
-      deselectAll.disabled = true;
-      manageFilters.disabled = true;
-      remove.disabled = true;
-
-      let deleted = 0;
-      let failed = 0;
-      let lastError = "";
-
-      for (const chat of chosen) {
-        progress.textContent = `Deleting ${deleted + failed + 1} of ${chosen.length}: ${chat.title}`;
-
-        try {
-          await deleteChat(chat);
-          selected.delete(chat.href);
-          deleted++;
-        } catch (error) {
-          failed++;
-          lastError = error instanceof Error ? error.message : String(error);
-          console.error("[AI Client Utility Suite]", chat.title, error);
-        }
-      }
-
-      chats = cachedHistory ? [...cachedHistory.values()] : chats.filter(chat => selected.has(chat.href));
-
-      if (failed) {
-        progress.textContent = `${deleted} deleted, ${failed} failed. ${lastError}`;
-        progress.classList.add("acus-error");
-      } else {
-        progress.textContent = `${deleted} chat${deleted === 1 ? "" : "s"} deleted successfully.`;
-        progress.classList.remove("acus-error");
-      }
-
-      search.disabled = false;
-      selectSuggested.disabled = false;
-      selectAll.disabled = false;
-      deselectAll.disabled = false;
-      manageFilters.disabled = false;
-      render();
-      refreshControls();
-
-      for (const container of scrollContainersForChats()) container.scrollTop = 0;
-    };
-
-    render();
-    refreshControls();
-    search.focus();
+    makeOverlay(chats.map(classify));
   }
 
   async function bulkArchive() {
@@ -1203,7 +1650,6 @@
       .acus-prompt{border-top:1px solid #333;padding:14px 0}.acus-prompt strong{display:block;margin-bottom:9px}.acus-prompt-actions{display:flex;gap:7px;margin-bottom:9px}
       .acus-library-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}.acus-library-status{color:#aaa}.acus-error{color:#ff8585}
       .acus-archive-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.acus-archive-toolbar button,.acus-archive-submit{background:#2b2b2b;color:#fff;border:1px solid #444;border-radius:10px;padding:8px 11px;cursor:pointer}.acus-archive-toolbar button:disabled,.acus-archive-submit:disabled{opacity:.5;cursor:not-allowed}.acus-archive-count{color:#aaa;margin-left:auto}.acus-archive-list{max-height:430px;overflow:auto;border:1px solid #333;border-radius:12px;padding:8px}.acus-archive-row{display:flex;align-items:center;gap:10px;padding:10px;border-radius:9px;cursor:pointer}.acus-archive-row:hover,.acus-archive-row.acus-selected{background:#2b2b2b}.acus-archive-row input{flex:0 0 auto}.acus-archive-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acus-archive-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.acus-archive-progress{color:#aaa;min-width:0}
-      .acus-cleaner-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.acus-cleaner-toolbar button,.acus-cleaner-delete,.acus-filter-actions button{background:#2b2b2b;color:#fff;border:1px solid #444;border-radius:10px;padding:8px 11px;cursor:pointer}.acus-cleaner-toolbar button:disabled,.acus-cleaner-delete:disabled{opacity:.5;cursor:not-allowed}.acus-cleaner-count{color:#aaa;margin-left:auto}.acus-cleaner-list{max-height:430px;overflow:auto;border:1px solid #333;border-radius:12px;padding:8px}.acus-cleaner-row{display:flex;align-items:flex-start;gap:10px;padding:10px;border-radius:9px;cursor:pointer}.acus-cleaner-row:hover,.acus-cleaner-row.acus-selected{background:#2b2b2b}.acus-cleaner-info{min-width:0}.acus-cleaner-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acus-cleaner-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.acus-cleaner-progress{color:#aaa;min-width:0}.acus-filter-section{margin-bottom:16px}.acus-filter-actions{display:flex;justify-content:flex-end;gap:8px}
     `;
     document.head.append(style);
 
