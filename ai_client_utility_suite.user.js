@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.0.0
+// @version      2.1.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -2888,8 +2888,39 @@
       { group: 'Writing', name: '✎ Prompt Coach', description: 'Review your request and refine its wording locally', run: () => promptCoach() },
       { group: 'Writing', name: '↔ Text tools', description: 'Clean spacing, convert Markdown, and count words', run: textTools },
       { group: 'Preferences', name: '⚙ Settings', description: 'Appearance, cleaner defaults, and shortcuts', run: settingsScreen },
-      { group: 'Preferences', name: '⌨ Shortcuts', description: 'Find tools and prompts with Alt + Shift + K', run: shortcutPalette }
+      { group: 'Preferences', name: '⌨ Shortcuts', description: 'Find tools and prompts with Alt + Shift + K', run: shortcutPalette },
+      { group: 'Preferences', name: '? Troubleshooting', description: 'Missing buttons, browser setup, loading, and support checks', run: troubleshooting }
     ];
+  }
+
+  function troubleshooting() {
+    const box = document.createElement('div');
+    box.innerHTML = `<p class="acus-muted">Choose the problem below. Checks describe this page; they cannot inspect extension permissions or prove that every client feature works.</p>
+      <details open><summary>AI Tools button is missing</summary><ol class="acus-tips"><li>Open chatgpt.com or claude.ai in a normal browser tab. Other domains and browser side panels may not run the script.</li><li>Open Tampermonkey and check that both the extension and AI Client Utility Suite are enabled. Install the latest script if it is missing from the dashboard.</li><li>In your browser's extension settings, allow Tampermonkey access to this site. In Opera, open opera://extensions. Enable Allow User Scripts if available, or Developer Mode as directed by Tampermonkey.</li><li>Refresh the page after changing permissions. Private windows may need separate extension permission.</li><li>If Tampermonkey lists the suite as enabled on this page but the button is still missing, try Alt + Shift + K if the suite shortcut is enabled. Temporarily disable other userscripts on this site to check for conflicts, then restore them.</li></ol><p><a href="https://www.tampermonkey.net/faq.php?locale=en&q=Q209" target="_blank" rel="noopener noreferrer">Tampermonkey userscript permission guide</a></p></details>
+      <details><summary>Chats are missing or loading slowly</summary><p>The suite indexes sidebar entries that the client makes available. Open the sidebar, wait for the page to finish loading, and use Refresh history in Chat Cleaner. Cached history may be incomplete. Chat numbers follow indexed sidebar order and are not verified creation dates.</p><p>For exports, wait for the conversation to load. Capture waits up to 90 seconds per chat. Pause and resume the draft when the connection improves, or retry failed captures. After a page reload, reopen Conversation export and choose Resume draft. Exports only include loaded messages.</p></details>
+      <details><summary>A button or cleanup action fails</summary><p>Finish or close any native client confirmation first. Check whether the chat is locked, then review the reported failure. Retry only the chats you still want to process. If the client layout changed, install the latest suite update and refresh. Never repeat a delete action without checking whether the original conversation still exists.</p></details>
+      <details><summary>Saved prompts or settings seem missing</summary><p>Check that you are using the same browser profile and userscript manager. Storage does not automatically sync between computers. Import a Prompt Library backup if you have one. Bookmarks, locks, history, and export drafts are separate for each client. Export the library before reinstalling the extension or clearing its data.</p></details>
+      <h3>Page checks</h3><button class="acus-checks">Refresh checks</button><label class="acus-field">Support summary<textarea class="acus-input acus-report" readonly></textarea></label><button class="acus-copy acus-primary">Copy support summary</button><p role="status"></p><p class="acus-muted">The summary excludes chat titles, messages, prompts, and the current conversation address. Review it before sharing. Browser version and extension permission details must be added manually.</p><p><a href="https://github.com/marcoaval/AI-Client-Utility-Suite/blob/main/TROUBLESHOOTING.md" target="_blank" rel="noopener noreferrer">Open the troubleshooting guide</a> · <a href="https://github.com/marcoaval/AI-Client-Utility-Suite/issues/new" target="_blank" rel="noopener noreferrer">Report a problem</a></p>`;
+    const report = box.querySelector('.acus-report');
+    const refresh = () => {
+      let storage = 'Unavailable';
+      try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
+      report.value = [
+        'AI Client Utility Suite 2.1.0',
+        `Checked: ${new Date().toISOString()}`,
+        `Site: ${location.hostname}`,
+        `Page load: ${document.readyState}`,
+        `Launcher present: ${document.getElementById(APP_ID + '-launcher') ? 'Yes' : 'No'}`,
+        `Userscript storage: ${storage}`,
+        `Sidebar chats currently detected: ${getChatLinks().length}`,
+        `Supported loaded message elements: ${conversationNodes().length}`,
+        `Suite shortcut: ${loadSettings().shortcutEnabled ? 'Enabled' : 'Disabled'}`,
+        'Extension permissions: Check manually in browser settings'
+      ].join('\n');
+    };
+    box.querySelector('.acus-checks').onclick = refresh;
+    box.querySelector('.acus-copy').onclick = () => copyText(report.value, message => { box.querySelector('[role="status"]').textContent = message; });
+    modal('Troubleshooting', box); refresh();
   }
 
   function shortcutPalette() {

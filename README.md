@@ -68,6 +68,8 @@ Load the full chat history, filter conversations by title, select the chats you 
 
 ## Install
 
+If the toolbox is missing or a feature fails, see the [troubleshooting guide](TROUBLESHOOTING.md). When the toolbox opens, **Preferences → Troubleshooting** provides problem guides and a support summary with no chat content.
+
 1. Install Tampermonkey.
 2. Open `ai_client_utility_suite.user.js` on GitHub.
 3. Open the Raw version of the file and install it with Tampermonkey.
@@ -100,7 +102,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.0.0 adds conversation snapshots and ZIP exports, prompt version history, a local prompt coach, text tools, bookmarks, saved cleaner views, and a shortcut menu.
+Version 2.1.0 adds troubleshooting guidance and page checks alongside conversation exports, prompt history, writing tools, bookmarks, saved views, and shortcuts.
 
 ## Privacy
 

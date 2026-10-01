@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+- Troubleshooting screen for missing buttons, browser permissions, slow loading, failed actions, and missing saved data, with a back arrow.
+- Refreshable page checks and a copyable support summary excluding chat content and conversation addresses. Checks do not claim to inspect browser permissions or verify storage writes.
+- A standalone troubleshooting guide linked from the README so help remains accessible when the script cannot run, including Opera setup instructions.
+
 ## 2.0.0
 
 ### Added
