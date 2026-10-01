@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.0
+
+### Added
+- Offline word-choice checks for correctly spelled words in common confusion patterns, including definitely and defiantly, lose and loose, whether and weather, their and there, and than and then.
+- Word-choice suggestions explain the distinction and include Keep original word. Correctly spelled words are never changed automatically by these checks.
+- Teach a word choice saves a chosen replacement for similar prompt context, including cases not covered by built-in patterns. No external service or API key is used.
+
+### Limitations
+- Local phrase rules and remembered choices do not provide general sentence understanding and can miss or misinterpret intended meanings.
+
 ## 2.5.1
 
 ### Improved

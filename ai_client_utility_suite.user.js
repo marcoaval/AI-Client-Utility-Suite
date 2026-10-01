@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.5.1
+// @version      2.6.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -51025,6 +51025,39 @@ is-buffer/index.js:
     GM_setValue(SPELLING_MEMORY_KEY, JSON.stringify([...memory, { word: word.toLowerCase(), replacement, features: spellingFeatures(fullPrompt) }].slice(-200)));
   }
 
+  function contextualWordChoices(word, before, after, fullPrompt, memory = []) {
+    const key = word.toLowerCase(), left = before.toLowerCase(), right = after.toLowerCase();
+    const choices = [];
+    const add = (replacement, reason) => {
+      if (word !== word.toLowerCase() && replacement === replacement.toLowerCase()) replacement = word === word.toUpperCase() ? replacement.toUpperCase() : replacement[0].toUpperCase() + replacement.slice(1);
+      if (replacement.toLowerCase() !== key && !choices.some(item => item.replacement === replacement)) choices.push({ replacement, reason });
+    };
+    if (key === 'defiantly' && /^\s+(?:want|think|believe|need|agree|recommend|will|would|can|should)\b/.test(right)) add('definitely', 'Definitely means certainly; defiantly means resisting or disobeying.');
+    if (key === 'loose' && /^\s+(?:(?:the|my|your|our|a)\s+)?(?:weight|game|match|money|temper|keys|chance)\b/.test(right)) add('lose', 'Lose means no longer have or fail to win; loose means not tight.');
+    if (key === 'lose' && /^\s+(?:fit|fitting|screw|screws|clothing)\b/.test(right)) add('loose', 'Loose describes something not tight; lose is a verb.');
+    if (key === 'weather' && /^\s+(?:to|or\s+not)\b/.test(right)) add('whether', 'Whether introduces a choice; weather describes atmospheric conditions.');
+    if (key === 'whether' && /^\s+(?:forecast|conditions|report)\b/.test(right)) add('weather', 'Weather fits forecasts, conditions, and reports.');
+    if (key === 'their' && /^\s+(?:is|are|was|were)\b/.test(right)) add('there', 'There can introduce something that exists; their describes possession.');
+    if (key === 'there' && /^\s+(?:project|house|car|team|account|game|computer)\s+(?:is|was|has)\b/.test(right)) add('their', 'Their describes who owns or belongs to something.');
+    if (key === 'your' && /^\s+(?:welcome|going|doing|being|right(?=\s*(?:[.!?,]|$)))\b/.test(right)) add("you're", 'You’re means you are; your describes possession.');
+    if (key === 'its' && /^\s+(?:a|an)\b/.test(right)) add("it's", 'It’s means it is or it has; its describes possession.');
+    if (key === "it's" && /^\s+(?:color|colour|name|size|shape|owner|price)\b/.test(right)) add('its', 'Its describes something belonging to it.');
+    if (key === 'then' && /\b(?:better|worse|bigger|smaller|more|less|rather|other)\s*$/.test(left)) add('than', 'Than compares things; then describes sequence or time.');
+    if (key === 'accept' && /^\s+for\b/.test(right)) add('except', 'Except means excluding; accept means receive or agree.');
+    if (key === 'except' && /^\s+(?:(?:the|an|your)\s+)?(?:offer|invitation|request)\b/.test(right)) add('accept', 'Accept means agree to or receive an offer, invitation, or request.');
+    if (key === 'principle' && /^\s+(?:reason|goal|objective)\b/.test(right)) add('principal', 'Principal means main; principle means a rule or belief.');
+    if (key === 'dessert' && /^\s+island\b/.test(right)) add('desert', 'Desert refers to an arid place; dessert is a sweet course.');
+    if (key === 'fortnight' && /\b(?:game|gaming|battle|royale|skins|vbucks|epic)\b/i.test(fullPrompt) && !/\b(?:weeks|days|duration|next|last)\b/i.test(fullPrompt)) add('Fortnite', 'Gaming context may refer to Fortnite; fortnight means two weeks.');
+    const features = new Set(spellingFeatures(fullPrompt));
+    for (const record of memory) {
+      if (record?.word !== key || typeof record.replacement !== 'string' || !Array.isArray(record.features)) continue;
+      const overlap = record.features.filter(feature => features.has(feature)).length;
+      const similarity = overlap / Math.max(1, new Set([...features, ...record.features]).size);
+      if (overlap >= 2 && similarity >= 0.5) add(record.replacement, 'You chose this word in similar wording before.');
+    }
+    return choices;
+  }
+
   function spellingSuggestions(text, fullPrompt = text) {
     const fixes = { spellingg: 'spelling', speling: 'spelling', corection: 'correction', correcton: 'correction', automaticly: 'automatically', automaticaly: 'automatically', promt: 'prompt', promp: 'prompt', freind: 'friend', freinds: 'friends', computewr: 'computer', th9ihk: 'think', awny: 'any', yuou: 'you', yotu: 'you', teh: 'the', hte: 'the', thier: 'their', recieve: 'receive', recieved: 'received', recieving: 'receiving', seperate: 'separate', seperately: 'separately', definately: 'definitely', becuase: 'because', becasue: 'because', adress: 'address', occured: 'occurred', occurance: 'occurrence', accomodate: 'accommodate', acheive: 'achieve', acheived: 'achieved', beleive: 'believe', wierd: 'weird', langauge: 'language', sentance: 'sentence', grammer: 'grammar', relevent: 'relevant', enviroment: 'environment', requirments: 'requirements', optioinal: 'optional', explaiun: 'explain', troublshoot: 'troubleshoot', knolw: 'know', somertihng: 'something', donty: "don't", doesnt: "doesn't", didnt: "didn't", isnt: "isn't", wouldnt: "wouldn't", couldnt: "couldn't", shouldnt: "shouldn't" };
     const source = String(text);
@@ -51044,7 +51077,12 @@ is-buffer/index.js:
         suggestions.push({ start, end, word, replacement, automatic: false, choices: [replacement] }); continue;
       }
       if (Object.hasOwn(fixes, word)) { suggestions.push({ start, end, word, replacement: fixes[word], automatic: true, choices: [fixes[word]] }); continue; }
-      if (dictionary.correct(word.replace(/’/g, "'"))) continue;
+      if (dictionary.correct(word.replace(/’/g, "'"))) {
+        const contextual = contextualWordChoices(word, source.slice(Math.max(0, start - 80), start), source.slice(end, end + 80), fullPrompt, memory);
+        if (contextual.length) suggestions.push({ start, end, word, replacement: contextual[0].replacement, automatic: false, choices: [...contextual.map(item => item.replacement), word], reason: contextual[0].reason, wordChoice: true });
+        if (suggestions.length >= 40) break;
+        continue;
+      }
       let choices = spellingCache.get(word);
       if (!choices) { choices = dictionary.suggest(word).slice(0, 16); if (spellingCache.size > 1000) spellingCache.clear(); spellingCache.set(word, choices); }
       const nearbyNames = word.length >= 5 ? [...spellingNames.keys()].filter(name => Math.abs(name.length - word.length) <= 2 && spellingDistance(word.toLowerCase(), name) <= 2) : [];
@@ -51091,6 +51129,15 @@ is-buffer/index.js:
     const autoSpelling = spelling.querySelector('input'), spellingStatus = spelling.querySelector('[role="status"]'), spellingUndo = spelling.querySelector('button');
     const spellingFields = [request, box.querySelector('.acus-context'), box.querySelector('.acus-constraints'), rewrite];
     const wholePrompt = () => [request.value, box.querySelector('.acus-context').value, box.querySelector('.acus-constraints').value, suggestionEdited ? rewrite.value : ''].join('\n');
+    const teachChoice = document.createElement('details');
+    teachChoice.innerHTML = '<summary>Teach a word choice</summary><p class="acus-muted">If a correctly spelled word has the wrong meaning, enter that word and the word you intended. The coach will suggest your choice in similar wording. This saves a preference; it does not change the prompt automatically.</p><label class="acus-field">Word in this prompt<input class="acus-input acus-choice-original" spellcheck="true"></label><label class="acus-field">Word you meant<input class="acus-input acus-choice-intended" spellcheck="true"></label><button class="acus-choice-save">Remember this word choice</button><p role="status"></p>';
+    spelling.append(teachChoice);
+    teachChoice.querySelector('button').onclick = () => {
+      const original = teachChoice.querySelector('.acus-choice-original').value.trim(), intended = teachChoice.querySelector('.acus-choice-intended').value.trim(), message = teachChoice.querySelector('[role="status"]');
+      if (![original, intended].every(word => /^[a-z]+(?:['’][a-z]+)*$/i.test(word) && word.length <= 48) || original.toLowerCase() === intended.toLowerCase()) { message.textContent = 'Enter two different words, up to 48 letters each. Apostrophes are allowed.'; return; }
+      if (!(wholePrompt().match(/[\p{L}]+(?:['’][\p{L}]+)*/gu) || []).some(word => word.toLowerCase() === original.toLowerCase())) { message.textContent = 'The original word must appear in your request or details so the coach can learn its context.'; return; }
+      rememberSpellingChoice(original, intended, wholePrompt()); showDictionarySuggestions(); message.textContent = `Remembered ${original} → ${intended} for similar wording. Review the suggested change before applying it.`;
+    };
     const learningHelp = document.createElement('p'); learningHelp.className = 'acus-muted'; learningHelp.textContent = 'Suggestions use the whole prompt and details, gaming context, and corrections you choose. Learning stays local: selected spellings, remembered names, and hashed context features are saved, not full prompts. These are heuristic guesses; other meanings remain possible.'; spelling.append(learningHelp);
     const resetLearning = button('Clear learned spellings and names'); resetLearning.onclick = () => {
       if (!confirm('Clear learned spelling choices and remembered names? Built-in names remain available.')) return;
@@ -51155,9 +51202,11 @@ is-buffer/index.js:
         for (const item of spellingSuggestions(checkedText, wholePrompt()).filter(item => !ignoredWords.has(item.word))) {
           const row = document.createElement('div'); row.className = 'acus-prompt-actions';
           const label = document.createElement('span'); label.textContent = `${field.closest('label').childNodes[0].textContent.trim()}: ${item.word}`; row.append(label);
+          if (item.reason) { const explanation = document.createElement('span'); explanation.className = 'acus-muted'; explanation.textContent = `Word choice: ${item.reason} Keep the original if it matches your meaning.`; row.append(explanation); }
           for (const replacement of item.choices) {
-            const action = button(replacement === item.choices[0] ? `${replacement} · Suggested` : replacement); action.setAttribute('aria-label', `Replace ${item.word} with ${replacement} in ${field.closest('label').childNodes[0].textContent.trim()}`); action.onclick = () => {
+            const action = button(replacement === item.word ? 'Keep original word' : replacement === item.choices[0] ? `${replacement} · Suggested` : replacement); action.setAttribute('aria-label', replacement === item.word ? `Keep ${item.word} in ${field.closest('label').childNodes[0].textContent.trim()}` : `Replace ${item.word} with ${replacement} in ${field.closest('label').childNodes[0].textContent.trim()}`); action.onclick = () => {
               if (field.value !== checkedText) { showDictionarySuggestions(); return; }
+              if (replacement === item.word) { ignoredWords.add(item.word); showDictionarySuggestions(); spellingStatus.textContent = `Kept ${item.word}.`; return; }
               rememberSpellingChoice(item.word, replacement, wholePrompt());
               const after = applySpellingCorrections(checkedText, [{ ...item, replacement }]);
               lastCorrection = { field, before: checkedText, after, start: item.start, end: item.end }; spellingUndo.disabled = false;
@@ -51204,7 +51253,7 @@ is-buffer/index.js:
     };
     const scheduleDictionary = () => {
       if (nameEditorOpen) return;
-      if (lastCorrection && lastCorrection.field.value !== lastCorrection.after) { alternatives.replaceChildren(); spellingUndo.disabled = true; lastCorrection = null; }
+      if (lastCorrection && lastCorrection.field.value !== lastCorrection.after) { alternatives.replaceChildren(); spellingUndo.disabled = true; lastCorrection = null; spellingStatus.textContent = 'Text changed. Reviewing current word choices.'; }
       clearTimeout(dictionaryTimer); dictionaryTimer = setTimeout(showDictionarySuggestions, 500);
     };
     for (const field of spellingFields) field.addEventListener('input', scheduleDictionary);
@@ -52933,7 +52982,7 @@ is-buffer/index.js:
       let storage = 'Unavailable';
       try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
       report.value = [
-        'AI Client Utility Suite 2.5.1',
+        'AI Client Utility Suite 2.6.0',
         `Checked: ${new Date().toISOString()}`,
         `Site: ${location.hostname}`,
         `Page load: ${document.readyState}`,

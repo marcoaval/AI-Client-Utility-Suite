@@ -10,7 +10,7 @@ const context = vm.createContext({
   document: {}, console, TextEncoder, TextDecoder,
 });
 vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) +
-  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat, revisePrompt, promptSnapshot, formatText, coachPrompt, spellingSuggestions, applySpellingCorrections, rankSpellingChoices, spellingFeatures, rememberSpellingChoice, validChatHref, normalizeView, toggleBookmark, loadBookmarks, snapshotText, exportFilename, crc32, zipFiles, backupFiles, domMessageText }; })();', context);
+  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat, revisePrompt, promptSnapshot, formatText, coachPrompt, spellingSuggestions, applySpellingCorrections, rankSpellingChoices, contextualWordChoices, spellingFeatures, rememberSpellingChoice, validChatHref, normalizeView, toggleBookmark, loadBookmarks, snapshotText, exportFilename, crc32, zipFiles, backupFiles, domMessageText }; })();', context);
 const h = context.helpers;
 const day = value => h.parseDateInput(value);
 
@@ -88,6 +88,19 @@ test('chosen corrections learn hashed context rather than full prompts', () => {
     assert.ok(memory[0].features.every(feature => feature.startsWith('prompt_')));
     assert.equal(h.rankSpellingChoices('ther', ['there', 'their'], 'team owns project code', memory).choices[0], 'their');
   } finally { context.GM_getValue = previousGet; context.GM_setValue = previousSet; }
+});
+
+test('word-choice checks flag valid spellings for review without automatic replacement', () => {
+  for (const [text, intended] of [['I defiantly want to join', 'definitely'], ['I want to loose weight', 'lose'], ['Decide weather or not to go', 'whether'], ['This is better then before', 'than'], ['their are two options', 'there']]) {
+    const item = h.spellingSuggestions(text).find(item => item.wordChoice);
+    assert.ok(item, text);
+    assert.equal(item.choices[0], intended);
+    assert.equal(item.automatic, false);
+    assert.ok(item.choices.includes(item.word));
+  }
+  assert.equal(h.spellingSuggestions('The loose screw rattles').length, 0);
+  assert.equal(h.spellingSuggestions('I defiantly refused to obey').length, 0);
+  assert.equal(h.spellingSuggestions('your right hand').length, 0);
 });
 
 test('bookmarks are separate from locks and reject unsafe paths', () => {

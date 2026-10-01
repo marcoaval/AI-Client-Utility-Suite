@@ -49,6 +49,8 @@ Prompt Coach uses a bundled full English dictionary and nspell engine locally, w
 
 Spelling suggestions now use the whole request and optional details, repeated vocabulary, gaming cues, and choices you previously made. Known names such as Fortnite, Minecraft, Roblox, GitHub, and Tampermonkey remain valid. In gaming context, a nearby misspelling can favor Fortnite while still offering other spellings. Context-based automatic corrections keep alternative buttons beneath the controls. Choose **Remember as a name…** for unfamiliar names. It opens **Correct name spelling**, where you can enter the intended spelling and capitalization before choosing **Save name and spelling**. Saving remembers the name, updates the selected occurrence, and learns the original spelling as a possible alias. **Cancel** saves nothing. Use **Undo last spelling correction** to reverse the text change, or **Clear learned spellings and names** to reset personal learning. Up to 200 chosen corrections and 200 names are stored locally, with hashed context features rather than full prompts. This ranking uses local heuristics and can guess incorrectly; review the suggestion and use Undo when needed.
 
+The coach also checks common wrong-word patterns even when the word is spelled correctly, such as **defiantly want → definitely want**, **loose weight → lose weight**, and **better then → better than**. These are review-only suggestions with an explanation and **Keep original word**, never automatic replacements. **Teach a word choice** lets you enter the word in your prompt and the word you intended; the saved preference can suggest a change in similar wording. These checks run entirely offline using phrase rules and remembered choices. They do not understand every sentence and can miss or misread meanings.
+
 ### Bookmarks, saved views, and shortcuts
 
 
@@ -107,7 +109,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.5.1 adds contextual spelling suggestions and remembered names to Prompt Coach, alongside field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
+Version 2.6.0 adds offline word-choice checks to Prompt Coach, alongside field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
 
 ## Privacy
 
