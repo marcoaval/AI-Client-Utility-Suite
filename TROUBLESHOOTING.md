@@ -4,7 +4,7 @@
 
 1. Open **chatgpt.com** or **claude.ai** in a normal browser tab. The script matches those domains only. Browser side panels may behave differently.
 2. Make sure Tampermonkey is installed and enabled, and **AI Client Utility Suite** is enabled in its dashboard.
-3. Allow Tampermonkey access to the site in your browser's extension settings. For Opera, open `opera://extensions`. Enable **Allow User Scripts** if available, or **Developer Mode** as directed by Tampermonkey. See the [official permission guide](https://www.tampermonkey.net/faq.php?locale=en&q=Q209).
+3. Allow Tampermonkey access to the site in your browser's extension settings. Follow the **Browser permission setup** instructions below for your browser.
 4. Refresh the page after changing permissions. A private window may require separate extension permission; try a normal window first.
 5. Click Tampermonkey while viewing the site. If the suite is not listed, check installation, site access, and the address. If it is listed as enabled, a startup error or another extension may be involved.
 6. Try **Alt + Shift + K** if the suite shortcut is enabled. Temporarily disable other userscripts on this site to check for conflicts, then restore them.

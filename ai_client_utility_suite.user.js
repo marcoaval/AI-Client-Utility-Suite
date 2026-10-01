@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.1.1
+// @version      2.1.2
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -2896,7 +2896,7 @@
   function troubleshooting() {
     const box = document.createElement('div');
     box.innerHTML = `<p class="acus-muted">Choose the problem below. Checks describe this page; they cannot inspect extension permissions or prove that every client feature works.</p>
-      <details open><summary>AI Tools button is missing</summary><ol class="acus-tips"><li>Open chatgpt.com or claude.ai in a normal browser tab. Other domains and browser side panels may not run the script.</li><li>Open Tampermonkey and check that both the extension and AI Client Utility Suite are enabled. Install the latest script if it is missing from the dashboard.</li><li>In your browser's extension settings, allow Tampermonkey access to this site. In Opera, open opera://extensions. Enable Allow User Scripts if available, or Developer Mode as directed by Tampermonkey.</li><li>Refresh the page after changing permissions. Private windows may need separate extension permission.</li><li>If Tampermonkey lists the suite as enabled on this page but the button is still missing, try Alt + Shift + K if the suite shortcut is enabled. Temporarily disable other userscripts on this site to check for conflicts, then restore them.</li></ol><p><a href="https://www.tampermonkey.net/faq.php?locale=en&q=Q209" target="_blank" rel="noopener noreferrer">Tampermonkey userscript permission guide</a></p></details>
+      <details open><summary>AI Tools button is missing</summary><ol class="acus-tips"><li>Open chatgpt.com or claude.ai in a normal browser tab. Other domains and browser side panels may not run the script.</li><li>Open Tampermonkey and check that both the extension and AI Client Utility Suite are enabled. Install the latest script if it is missing from the dashboard.</li><li>In your browser's extension settings, allow Tampermonkey access to this site. Follow the Browser permission setup section below for your browser.</li><li>Refresh the page after changing permissions. Private windows may need separate extension permission.</li><li>If Tampermonkey lists the suite as enabled on this page but the button is still missing, try Alt + Shift + K if the suite shortcut is enabled. Temporarily disable other userscripts on this site to check for conflicts, then restore them.</li></ol><p><a href="https://www.tampermonkey.net/faq.php?locale=en&q=Q209" target="_blank" rel="noopener noreferrer">Tampermonkey userscript permission guide</a></p></details>
       <details><summary>Browser permission setup</summary><p>First enable Tampermonkey and the suite in its dashboard. Then follow your browser below. Setting names vary by version; follow any permission prompt shown by Tampermonkey and refresh the site afterward.</p>
       <h4>Chrome</h4><p>Open chrome://extensions → Tampermonkey → Details. Enable Allow User Scripts if shown, or Developer Mode as directed by Tampermonkey. Under Site access, allow chatgpt.com or claude.ai. For an incognito window, also enable Allow in incognito.</p>
       <h4>Edge</h4><p>Open edge://extensions → Tampermonkey → Details. Allow access to the affected site. Enable Allow User Scripts if offered, or Developer Mode if Tampermonkey requests it. InPrivate windows need separate permission.</p>
@@ -2915,7 +2915,7 @@
       let storage = 'Unavailable';
       try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
       report.value = [
-        'AI Client Utility Suite 2.1.1',
+        'AI Client Utility Suite 2.1.2',
         `Checked: ${new Date().toISOString()}`,
         `Site: ${location.hostname}`,
         `Page load: ${document.readyState}`,

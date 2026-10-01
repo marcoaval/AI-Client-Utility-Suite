@@ -102,7 +102,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.1.1 includes browser-specific troubleshooting guidance and page checks alongside conversation exports, prompt history, writing tools, bookmarks, saved views, and shortcuts.
+Version 2.1.2 includes browser-specific troubleshooting guidance and page checks alongside conversation exports, prompt history, writing tools, bookmarks, saved views, and shortcuts.
 
 ## Privacy
 

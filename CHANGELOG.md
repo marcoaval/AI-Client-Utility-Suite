@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.2
+
+### Improved
+- The missing toolbox checklist now refers to the browser permission section instead of repeating Opera-specific instructions.
+
 ## 2.1.1
 
 ### Improved
