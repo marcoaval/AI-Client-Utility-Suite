@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.5.0
+// @version      2.5.1
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -51032,7 +51032,7 @@ is-buffer/index.js:
     const suggestions = [];
     const dictionary = EnglishSpelling.get();
     const savedNames = readStored(SPELLING_NAMES_KEY, []);
-    for (const name of Array.isArray(savedNames) ? savedNames : []) if (typeof name === 'string' && /^[a-z]{2,48}$/i.test(name)) spellingNames.set(name.toLowerCase(), name);
+    for (const name of Array.isArray(savedNames) ? savedNames : []) if (typeof name === 'string' && /^[\p{L}][\p{L}\p{N}'’-]{1,47}$/u.test(name)) spellingNames.set(name.toLowerCase(), name);
     for (const [key] of spellingNames) if (!registeredNames.has(key)) { dictionary.add(key); registeredNames.add(key); spellingCache.clear(); }
     const storedMemory = readStored(SPELLING_MEMORY_KEY, []), memory = Array.isArray(storedMemory) ? storedMemory : [];
     for (const match of source.matchAll(/[\p{L}]+(?:['’][\p{L}]+)*/gu)) {
@@ -51048,7 +51048,8 @@ is-buffer/index.js:
       let choices = spellingCache.get(word);
       if (!choices) { choices = dictionary.suggest(word).slice(0, 16); if (spellingCache.size > 1000) spellingCache.clear(); spellingCache.set(word, choices); }
       const nearbyNames = word.length >= 5 ? [...spellingNames.keys()].filter(name => Math.abs(name.length - word.length) <= 2 && spellingDistance(word.toLowerCase(), name) <= 2) : [];
-      const ranked = rankSpellingChoices(word, [...choices, ...nearbyNames], fullPrompt, memory);
+      const learnedNames = memory.filter(record => record?.word === word.toLowerCase() && typeof record.replacement === 'string' && spellingNames.has(record.replacement.toLowerCase())).map(record => record.replacement);
+      const ranked = rankSpellingChoices(word, [...choices, ...nearbyNames, ...learnedNames], fullPrompt, memory);
       choices = ranked.choices.slice(0, 6);
       suggestions.push({ start, end, word, replacement: choices[0] || word, automatic: (choices.length === 1 || ranked.contextual) && word === word.toLowerCase(), choices, contextual: ranked.contextual });
       if (suggestions.length >= 40) break;
@@ -51100,9 +51101,10 @@ is-buffer/index.js:
     }; spelling.append(resetLearning);
     const alternatives = document.createElement('div'); spelling.append(alternatives);
     let lastCorrection = null;
+    let nameEditorOpen = false;
     const undoneValues = new WeakMap();
     const correctSpelling = (field, completed = false) => {
-      if (!autoSpelling.checked) return;
+      if (!autoSpelling.checked || nameEditorOpen) return;
       const before = field.value, start = field.selectionStart, end = field.selectionEnd;
       if (undoneValues.get(field) === before) return;
       const contextText = wholePrompt();
@@ -51145,6 +51147,7 @@ is-buffer/index.js:
     let dictionaryTimer;
     const showDictionarySuggestions = () => {
       if (!box.isConnected) return;
+      nameEditorOpen = false;
       dictionaryResults.replaceChildren();
       for (const field of spellingFields) {
         if (field === rewrite && !suggestionEdited) continue;
@@ -51164,14 +51167,43 @@ is-buffer/index.js:
           }
           if (!item.choices.length) { const none = document.createElement('span'); none.textContent = 'No dictionary suggestion; edit this word manually.'; row.append(none); }
           const ignore = button('Ignore this word'); ignore.onclick = () => { ignoredWords.add(item.word); showDictionarySuggestions(); }; row.append(ignore);
-          const rememberName = button('Remember as a name'); rememberName.onclick = () => {
-            const stored = readStored(SPELLING_NAMES_KEY, []), names = Array.isArray(stored) ? stored : [];
-            GM_setValue(SPELLING_NAMES_KEY, JSON.stringify([...new Set([...names, item.word])].slice(-200))); spellingCache.clear(); showDictionarySuggestions(); spellingStatus.textContent = `Remembered ${item.word} as a name on this browser.`;
-          }; row.append(rememberName); dictionaryResults.append(row);
+          const rememberName = button('Remember as a name…');
+          rememberName.onpointerdown = () => { nameEditorOpen = true; };
+          const nameHelp = document.createElement('span'); nameHelp.className = 'acus-muted'; nameHelp.textContent = 'Enter the correct spelling before saving.';
+          rememberName.onclick = () => {
+            nameEditorOpen = true;
+            clearTimeout(dictionaryTimer);
+            row.replaceChildren();
+            const nameLabel = document.createElement('label'); nameLabel.className = 'acus-field'; nameLabel.textContent = 'Correct name spelling';
+            const nameInput = document.createElement('input'); nameInput.className = 'acus-input'; nameInput.value = item.word; nameInput.maxLength = 48; nameInput.spellcheck = false; nameLabel.append(nameInput);
+            const explanation = document.createElement('p'); explanation.className = 'acus-muted'; explanation.textContent = 'Enter the intended spelling for this word, including capitalization. Save remembers it on this browser and replaces this occurrence in your prompt. Cancel keeps everything unchanged.';
+            const nameStatus = document.createElement('p'); nameStatus.setAttribute('role', 'status');
+            const saveName = button('Save name and spelling', 'accent'), cancelName = button('Cancel');
+            cancelName.onclick = () => { nameEditorOpen = false; showDictionarySuggestions(); spellingStatus.textContent = 'Name not saved.'; };
+            const save = () => {
+              const name = nameInput.value.trim();
+              if (!/^[\p{L}][\p{L}\p{N}'’-]{1,47}$/u.test(name)) { nameStatus.textContent = 'Enter one name word, 2 to 48 characters, using letters, numbers, apostrophes, or hyphens.'; nameInput.focus(); return; }
+              if (field.value !== checkedText) { nameEditorOpen = false; showDictionarySuggestions(); spellingStatus.textContent = 'The prompt changed. Review the current word before saving a name.'; return; }
+              const contextText = wholePrompt();
+              const stored = readStored(SPELLING_NAMES_KEY, []), names = Array.isArray(stored) ? stored : [];
+              GM_setValue(SPELLING_NAMES_KEY, JSON.stringify([...names.filter(value => typeof value === 'string' && value.toLowerCase() !== name.toLowerCase()), name].slice(-200)));
+              if (name !== item.word) {
+                rememberSpellingChoice(item.word, name, contextText);
+                const after = applySpellingCorrections(checkedText, [{ ...item, replacement: name }]);
+                lastCorrection = { field, before: checkedText, after, start: item.start, end: item.end }; spellingUndo.disabled = false;
+                field.value = after; if (field === rewrite) suggestionEdited = true; review();
+              }
+              nameEditorOpen = false; spellingCache.clear(); showDictionarySuggestions(); spellingStatus.textContent = `Remembered ${name}. ${name !== item.word ? 'Prompt spelling updated; Undo is available.' : 'Your prompt spelling was kept.'}`;
+            };
+            saveName.onclick = save;
+            nameInput.onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); save(); } else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelName.click(); } };
+            row.append(nameLabel, explanation, saveName, cancelName, nameStatus); nameInput.focus(); nameInput.select();
+          }; row.append(rememberName, nameHelp); dictionaryResults.append(row);
         }
       }
     };
     const scheduleDictionary = () => {
+      if (nameEditorOpen) return;
       if (lastCorrection && lastCorrection.field.value !== lastCorrection.after) { alternatives.replaceChildren(); spellingUndo.disabled = true; lastCorrection = null; }
       clearTimeout(dictionaryTimer); dictionaryTimer = setTimeout(showDictionarySuggestions, 500);
     };
@@ -52901,7 +52933,7 @@ is-buffer/index.js:
       let storage = 'Unavailable';
       try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
       report.value = [
-        'AI Client Utility Suite 2.5.0',
+        'AI Client Utility Suite 2.5.1',
         `Checked: ${new Date().toISOString()}`,
         `Site: ${location.hostname}`,
         `Page load: ${document.readyState}`,

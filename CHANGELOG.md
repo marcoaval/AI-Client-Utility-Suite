@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.1
+
+### Improved
+- Remember as a name opens an editable spelling field with Save and Cancel, and explains that the spelling can be reviewed before saving.
+- Saving remembers the intended name, corrects the selected occurrence, and learns the original spelling as a possible alias. Undo remains available for the text change.
+
 ## 2.5.0
 
 ### Improved
