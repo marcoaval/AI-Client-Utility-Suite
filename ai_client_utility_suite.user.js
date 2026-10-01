@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.6.0
+// @version      2.7.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -49814,6 +49814,7 @@ is-buffer/index.js:
   const CHAT_CACHE_KEY = "aiClientUtilitySuite.chatCache";
   const CHAT_SORT_KEY = "aiClientUtilitySuite.chatSort";
   const SETTINGS_KEY = "aiClientUtilitySuite.settings";
+  const SHORTCUT_KEY = "aiClientUtilitySuite.shortcuts";
   const LOCKS_KEY = "aiClientUtilitySuite.lockedChats";
   const SCAN_KEY = "aiClientUtilitySuite.historyScan";
   const BOOKMARK_KEY = 'aiClientUtilitySuite.bookmarks';
@@ -49863,6 +49864,56 @@ is-buffer/index.js:
 
   function loadSettings() {
     return normalizeSettings(readStored(SETTINGS_KEY, { sort: GM_getValue(CHAT_SORT_KEY, 'newest') }));
+  }
+
+  function shortcutChord(event) {
+    return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && /^(Key[A-Z]|Digit[0-9])$/.test(event.code) ? event.code : '';
+  }
+
+  function normalizeShortcuts(value) {
+    const codes = new Set(), ids = new Set();
+    return (Array.isArray(value) ? value : []).filter(item => {
+      if (!item || typeof item.id !== 'string' || !item.id || ids.has(item.id) || !/^(Key[A-Z]|Digit[0-9])$/.test(item.code) || item.code === 'KeyK' || codes.has(item.code) || !['tool', 'prompt'].includes(item.kind) || typeof item.target !== 'string' || !item.target) return false;
+      codes.add(item.code); ids.add(item.id); return true;
+    }).map(item => ({ id: item.id, code: item.code, kind: item.kind, target: item.target, enabled: item.enabled !== false }));
+  }
+
+  function loadShortcuts() { return normalizeShortcuts(readStored(SHORTCUT_KEY, [])); }
+  function saveShortcuts(value) { GM_setValue(SHORTCUT_KEY, JSON.stringify(normalizeShortcuts(value))); }
+  function shortcutLabel(code) { return `Alt + Shift + ${code.replace(/^Key|^Digit/, '')}`; }
+
+  function shortcutTargets() {
+    return [...toolCatalog().map(tool => ({ kind: 'tool', id: tool.id, name: tool.name, description: tool.description, run: tool.run })), ...loadPrompts().map((prompt, index) => ({ kind: 'prompt', id: prompt.id, name: prompt.name, description: `Saved prompt · ${prompt.folder || 'Unfiled'}`, run: () => promptTemplate(prompt, index, shortcutPalette) }))];
+  }
+
+  function shortcutEditor(existing = null) {
+    const box = document.createElement('div');
+    box.innerHTML = '<p class="acus-muted">Choose a tool or saved prompt, then assign Alt + Shift plus a letter or number. K is reserved for the Shortcuts menu. A browser or operating system may reserve some combinations.</p><label class="acus-field">Open this tool or prompt<select class="acus-input acus-target"></select></label><label class="acus-field">Shortcut key<select class="acus-input acus-key"></select></label><label class="acus-field">Or press your shortcut here<input class="acus-input acus-record" readonly placeholder="Click here, then press Alt + Shift + a key"></label><label class="acus-check"><input type="checkbox" class="acus-enabled">Enable this shortcut</label><p class="acus-library-status" role="status"></p><div class="acus-prompt-actions"></div>';
+    const targets = shortcutTargets(), select = box.querySelector('.acus-target'), key = box.querySelector('.acus-key'), record = box.querySelector('.acus-record'), status = box.querySelector('[role="status"]'), enabled = box.querySelector('.acus-enabled');
+    targets.forEach((target, index) => { const option = document.createElement('option'); option.value = index; option.textContent = `${target.kind === 'prompt' ? 'Prompt' : 'Tool'} · ${target.name}`; select.append(option); });
+    for (const character of 'ABCDEFGHIJLMNOPQRSTUVWXYZ0123456789') { const option = document.createElement('option'); option.value = /^[0-9]$/.test(character) ? `Digit${character}` : `Key${character}`; option.textContent = shortcutLabel(option.value); key.append(option); }
+    const targetIndex = existing ? targets.findIndex(target => target.kind === existing.kind && target.id === existing.target) : 0;
+    if (targetIndex < 0) { const option = document.createElement('option'); option.value = ''; option.textContent = 'Previous target was removed. Choose another.'; select.prepend(option); select.value = ''; } else select.value = String(targetIndex);
+    key.value = existing?.code || [...key.options].find(option => !loadShortcuts().some(item => item.code === option.value))?.value || 'KeyA'; enabled.checked = existing?.enabled !== false;
+    const preview = () => { record.value = shortcutLabel(key.value); }; key.onchange = preview; preview();
+    record.onkeydown = event => {
+      if (['Tab', 'Escape'].includes(event.key)) return;
+      event.preventDefault(); event.stopPropagation();
+      const code = shortcutChord(event);
+      if (!code || code === 'KeyK') { status.textContent = 'Use Alt + Shift with a letter or number other than K.'; return; }
+      key.value = code; preview(); status.textContent = 'Key captured. Choose Save shortcut to keep it.';
+    };
+    const save = button('Save shortcut'); save.className = 'acus-primary';
+    save.onclick = () => {
+      const target = targets[Number(select.value)];
+      if (select.value === '' || !target) { status.textContent = 'Choose an available tool or saved prompt.'; return; }
+      const shortcuts = loadShortcuts();
+      if (shortcuts.some(item => item.id !== existing?.id && item.code === key.value)) { status.textContent = `${shortcutLabel(key.value)} is already assigned. Edit that shortcut or choose another key.`; return; }
+      const value = { id: existing?.id || crypto.randomUUID(), code: key.value, kind: target.kind, target: target.id, enabled: enabled.checked };
+      try { saveShortcuts([...shortcuts.filter(item => item.id !== value.id), value]); shortcutPalette('Shortcut saved.'); } catch { status.textContent = 'Shortcut could not be saved. Try again.'; }
+    };
+    const back = button('Cancel'); back.onclick = () => shortcutPalette(); box.querySelector('.acus-prompt-actions').append(save, back);
+    modal(existing ? 'Edit shortcut' : 'Create shortcut', box, shortcutPalette, 'Back to Shortcuts');
   }
 
   function lockedChats() {
@@ -51411,7 +51462,7 @@ is-buffer/index.js:
     const save = button('Save settings');
     const shortcutLabel = document.createElement('label'); shortcutLabel.className = 'acus-check';
     const shortcut = document.createElement('input'); shortcut.type = 'checkbox'; shortcut.checked = settings.shortcutEnabled;
-    shortcutLabel.append(shortcut, document.createTextNode('Enable Alt + Shift + K for shortcuts')); box.append(shortcutLabel);
+    shortcutLabel.append(shortcut, document.createTextNode('Enable keyboard shortcuts, including Alt + Shift + K')); box.append(shortcutLabel);
     save.className = 'acus-primary';
     const status = document.createElement('p');
     status.setAttribute('role', 'status');
@@ -52946,17 +52997,17 @@ is-buffer/index.js:
 
   function toolCatalog() {
     return [
-      { group: 'Chats', name: '🔎 Search Chats', description: 'Find conversations by title', run: searchChats },
-      { group: 'Chats', name: '🧹 Chat Cleaner', description: 'Search, bookmark, lock, export, and clean up', run: () => chatCleaner(false) },
-      { group: 'Chats', name: '📦 Bulk Archive', description: 'Archive selected sidebar conversations', run: bulkArchive },
-      { group: 'Chats', name: '★ Chat bookmarks', description: 'Quick access to important conversations', run: bookmarkedChats },
-      { group: 'Chats', name: '⇩ Conversation export', description: 'Preview loaded messages and download files or a ZIP', run: conversationExports },
-      { group: 'Writing', name: '📚 Prompt Library', description: 'Templates, favorites, folders, and version history', run: () => promptLibrary() },
-      { group: 'Writing', name: '✎ Prompt Coach', description: 'Review your request and refine its wording locally', run: () => promptCoach() },
-      { group: 'Writing', name: '↔ Text tools', description: 'Clean spacing, convert Markdown, and count words', run: textTools },
-      { group: 'Preferences', name: '⚙ Settings', description: 'Appearance, cleaner defaults, and shortcuts', run: settingsScreen },
-      { group: 'Preferences', name: '⌨ Shortcuts', description: 'Find tools and prompts with Alt + Shift + K', run: shortcutPalette },
-      { group: 'Preferences', name: '? Troubleshooting', description: 'Missing buttons, browser setup, loading, and support checks', run: troubleshooting }
+      { id: 'search', group: 'Chats', name: '🔎 Search Chats', description: 'Find conversations by title', run: searchChats },
+      { id: 'cleaner', group: 'Chats', name: '🧹 Chat Cleaner', description: 'Search, bookmark, lock, export, and clean up', run: () => chatCleaner(false) },
+      { id: 'archive', group: 'Chats', name: '📦 Bulk Archive', description: 'Archive selected sidebar conversations', run: bulkArchive },
+      { id: 'bookmarks', group: 'Chats', name: '★ Chat bookmarks', description: 'Quick access to important conversations', run: bookmarkedChats },
+      { id: 'export', group: 'Chats', name: '⇩ Conversation export', description: 'Preview loaded messages and download files or a ZIP', run: conversationExports },
+      { id: 'prompts', group: 'Writing', name: '📚 Prompt Library', description: 'Templates, favorites, folders, and version history', run: () => promptLibrary() },
+      { id: 'coach', group: 'Writing', name: '✎ Prompt Coach', description: 'Review your request and refine its wording locally', run: () => promptCoach() },
+      { id: 'text', group: 'Writing', name: '↔ Text tools', description: 'Clean spacing, convert Markdown, and count words', run: textTools },
+      { id: 'settings', group: 'Preferences', name: '⚙ Settings', description: 'Appearance, cleaner defaults, and shortcuts', run: settingsScreen },
+      { id: 'shortcuts', group: 'Preferences', name: '⌨ Shortcuts', description: 'Create keyboard shortcuts for tools and saved prompts', run: shortcutPalette },
+      { id: 'help', group: 'Preferences', name: '? Troubleshooting', description: 'Missing buttons, browser setup, loading, and support checks', run: troubleshooting }
     ];
   }
 
@@ -52982,7 +53033,7 @@ is-buffer/index.js:
       let storage = 'Unavailable';
       try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
       report.value = [
-        'AI Client Utility Suite 2.6.0',
+        'AI Client Utility Suite 2.7.0',
         `Checked: ${new Date().toISOString()}`,
         `Site: ${location.hostname}`,
         `Page load: ${document.readyState}`,
@@ -52999,16 +53050,29 @@ is-buffer/index.js:
     modal('Troubleshooting', box); refresh();
   }
 
-  function shortcutPalette() {
+  function shortcutPalette(message = '') {
     if (exportRunning || document.getElementById('vanick-cleaner-overlay')?.dataset.running === 'true') return;
     document.getElementById('vanick-cleaner-overlay')?.remove();
     const box = document.createElement('div');
-    box.innerHTML = '<p class="acus-muted">Alt + Shift + K opens this menu. Search tools or saved prompts. Disable the shortcut in Settings if it conflicts with another app.</p><label class="acus-field">Find a tool or prompt<input class="acus-input" type="search"></label><div class="acus-menu"></div>';
+    box.innerHTML = '<p class="acus-muted">Alt + Shift + K opens this menu. Create your own keyboard shortcuts below, or search for a tool or saved prompt.</p><div class="acus-prompt-actions acus-create"></div><p role="status" class="acus-library-status"></p><h3>Your keyboard shortcuts</h3><div class="acus-saved-shortcuts"></div><h3>Find a tool or prompt</h3><label class="acus-field">Search tools and prompts<input class="acus-input" type="search"></label><div class="acus-menu"></div>';
+    box.querySelector('[role="status"]').textContent = typeof message === 'string' ? message : '';
+    const create = button('Create shortcut'); create.className = 'acus-primary'; create.onclick = () => shortcutEditor(); box.querySelector('.acus-create').append(create);
+    const saved = box.querySelector('.acus-saved-shortcuts'), targets = shortcutTargets(), shortcuts = loadShortcuts();
+    if (!loadSettings().shortcutEnabled) { const warning = document.createElement('p'); warning.textContent = 'Keyboard shortcuts are turned off in Settings. You can still create and edit them here.'; saved.append(warning); }
+    if (!shortcuts.length) { const empty = document.createElement('p'); empty.className = 'acus-muted'; empty.textContent = 'No custom shortcuts yet. Choose Create shortcut to add one.'; saved.append(empty); }
+    for (const item of shortcuts) {
+      const target = targets.find(target => target.kind === item.kind && target.id === item.target), row = document.createElement('div'); row.className = 'acus-prompt-actions';
+      const name = document.createElement('span'); name.textContent = `${shortcutLabel(item.code)} → ${target?.name || 'Target removed'}${item.enabled ? '' : ' (disabled)'}`;
+      const edit = button('Edit'); edit.setAttribute('aria-label', `Edit ${shortcutLabel(item.code)}`); edit.onclick = () => shortcutEditor(item);
+      const toggle = button(item.enabled ? 'Disable' : 'Enable'); toggle.onclick = () => { saveShortcuts(loadShortcuts().map(value => value.id === item.id ? { ...value, enabled: !value.enabled } : value)); shortcutPalette('Shortcut updated.'); };
+      const remove = button('Delete'); remove.setAttribute('aria-label', `Delete ${shortcutLabel(item.code)}`); remove.onclick = () => { saveShortcuts(loadShortcuts().filter(value => value.id !== item.id)); shortcutPalette('Shortcut deleted.'); };
+      row.append(name, edit, toggle, remove); saved.append(row);
+    }
     const search = box.querySelector('input'); search.value = paletteQuery;
     const render = () => {
       paletteQuery = search.value;
       const query = search.value.trim().toLowerCase(), list = box.querySelector('.acus-menu'); list.replaceChildren();
-      const entries = [...toolCatalog().filter(tool => !tool.name.includes('Shortcuts')).map(tool => ({ name: tool.name, description: tool.description, run: tool.run })), ...loadPrompts().map((prompt, index) => ({ name: prompt.name, description: `Saved prompt · ${prompt.folder || 'Unfiled'}`, run: () => promptTemplate(prompt, index, shortcutPalette) }))];
+      const entries = shortcutTargets().filter(target => !(target.kind === 'tool' && target.id === 'shortcuts'));
       for (const entry of entries.filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query))) {
         const action = button(entry.name); action.className = 'acus-menu-btn'; action.onclick = () => entry.run();
         const detail = document.createElement('span'); detail.textContent = entry.description; action.append(detail); list.append(action);
@@ -53137,9 +53201,15 @@ is-buffer/index.js:
   inject();
   new MutationObserver(inject).observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener('keydown', event => {
-    if (event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === 'KeyK' && !event.repeat && loadSettings().shortcutEnabled) {
+    const code = shortcutChord(event);
+    if (code && !event.repeat && !event.defaultPrevented && !event.isComposing && loadSettings().shortcutEnabled) {
       if (exportRunning || document.getElementById('vanick-cleaner-overlay')?.dataset.running === 'true') return;
-      event.preventDefault(); shortcutPalette();
+      if (code === 'KeyK') { event.preventDefault(); shortcutPalette(); return; }
+      const shortcut = loadShortcuts().find(item => item.code === code && item.enabled);
+      if (!shortcut) return;
+      const target = shortcutTargets().find(target => target.kind === shortcut.kind && target.id === shortcut.target);
+      event.preventDefault();
+      if (target) target.run(); else shortcutPalette('This shortcut’s target was removed. Edit it to choose another tool or prompt.');
     }
   });
 })();

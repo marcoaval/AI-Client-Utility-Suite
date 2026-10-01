@@ -10,9 +10,26 @@ const context = vm.createContext({
   document: {}, console, TextEncoder, TextDecoder,
 });
 vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) +
-  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat, revisePrompt, promptSnapshot, formatText, coachPrompt, spellingSuggestions, applySpellingCorrections, rankSpellingChoices, contextualWordChoices, spellingFeatures, rememberSpellingChoice, validChatHref, normalizeView, toggleBookmark, loadBookmarks, snapshotText, exportFilename, crc32, zipFiles, backupFiles, domMessageText }; })();', context);
+  'this.helpers = { shortcutChord, normalizeShortcuts, shortcutLabel, parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat, revisePrompt, promptSnapshot, formatText, coachPrompt, spellingSuggestions, applySpellingCorrections, rankSpellingChoices, contextualWordChoices, spellingFeatures, rememberSpellingChoice, validChatHref, normalizeView, toggleBookmark, loadBookmarks, snapshotText, exportFilename, crc32, zipFiles, backupFiles, domMessageText }; })();', context);
 const h = context.helpers;
 const day = value => h.parseDateInput(value);
+
+test('shortcut assignments reject duplicate keys, reserved keys, and invalid stored records', () => {
+  const shortcut = { id: 'one', code: 'KeyC', kind: 'tool', target: 'coach' };
+  const normalized = h.normalizeShortcuts([shortcut, { ...shortcut, id: 'duplicate' }, { ...shortcut, id: 'menu', code: 'KeyK' }, { ...shortcut, id: 'bare', code: 'Enter' }, { ...shortcut, id: 'bad', code: 'KeyB', kind: 'script' }, { id: 'disabled', code: 'Digit2', kind: 'prompt', target: 'prompt-id', enabled: false }, null]);
+  assert.equal(normalized.length, 2);
+  assert.equal(normalized[0].enabled, true);
+  assert.equal(normalized[1].enabled, false);
+  assert.equal(h.shortcutLabel(normalized[1].code), 'Alt + Shift + 2');
+  assert.equal(h.normalizeShortcuts({ code: 'KeyC' }).length, 0);
+});
+
+test('keyboard shortcut chords exclude ordinary typing and extra modifiers', () => {
+  const event = { code: 'KeyC', altKey: true, shiftKey: true, ctrlKey: false, metaKey: false };
+  assert.equal(h.shortcutChord(event), 'KeyC');
+  assert.equal(h.shortcutChord({ ...event, code: 'Digit3' }), 'Digit3');
+  for (const change of [{ altKey: false }, { shiftKey: false }, { ctrlKey: true }, { metaKey: true }, { code: 'ArrowLeft' }]) assert.equal(h.shortcutChord({ ...event, ...change }), '');
+});
 
 test('prompt revisions preserve identity, limit history, and keep restored wording recoverable', () => {
   let prompt = h.normalizePrompts([{ name: 'Prompt', text: 'Original' }])[0];

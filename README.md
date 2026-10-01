@@ -58,7 +58,7 @@ Use the star beside a cleaner row or **Chat bookmarks** to save a conversation l
 
 **Saved cleaner views** remember a title search, view filter, and sorting choice. They do not save selections or number ranges. Applying a view preserves the current selection, including chats hidden by that view.
 
-The tools menu groups tools into Chats, Writing, and Preferences, with search across all groups. **Alt + Shift + K** opens a searchable shortcut menu for tools and saved prompts. Disable the keyboard shortcut in Settings if needed.
+The tools menu groups tools into Chats, Writing, and Preferences, with search across all groups. Open **Shortcuts → Create shortcut** to assign **Alt + Shift** plus a letter or number to a tool or saved prompt. Choose the key from the list or press it in the capture field, then save. Shortcuts can be edited, disabled, or deleted. Duplicate keys are rejected, and **Alt + Shift + K** is reserved for the searchable shortcut menu. Assignments stay local and survive refreshes. Disable all keyboard shortcuts in Settings if needed. Some combinations may be reserved by the browser or operating system. Prompt shortcuts open a preview and never send a message automatically.
 
 ### Conversation export
 
@@ -109,7 +109,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.6.0 adds offline word-choice checks to Prompt Coach, alongside field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
+Version 2.7.0 adds a shortcut manager for assigning keyboard shortcuts to tools and saved prompts, alongside offline word-choice checks, field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, and saved views.
 
 ## Privacy
 

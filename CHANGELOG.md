@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.7.0
+
+### Added
+- Create, edit, disable, and delete keyboard shortcuts for suite tools and saved prompts.
+- Choose Alt + Shift with a letter or number from a list, or capture the combination by pressing it.
+- Duplicate key checks, a reserved menu shortcut, and explanations for removed prompt targets or disabled shortcuts.
+
+### Fixed
+- The Shortcuts section now includes assignment controls instead of only a searchable tool menu.
+- Saved prompt shortcuts resolve the current prompt by its identifier, including after renaming or reordering. They open a preview without sending a message.
+
 ## 2.6.0
 
 ### Added
