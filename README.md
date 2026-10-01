@@ -35,13 +35,13 @@ Choose **New prompt** to save a plain prompt or a template such as `Explain {{to
 Use folders, favorites, and search to organize the library. **Edit** updates prompt text and its folder. **Export library** backs up all prompts, folders, favorites, and defaults. Selecting a folder changes this to **Export folder** to create a reusable pack. Import accepts both current packs and older plain prompt exports and merges them with existing prompts. Duplicate name and text pairs keep the existing library entry. Exported defaults may contain personal text you entered.
 
 ### Settings
-Choose light, dark, or page appearance, standard or large text, a default chat order, and a default cleaner view. Preferences apply to suite windows, and each settings or library screen includes a back arrow. Settings and prompts are shared across clients; chat locks and history are separate.
+Choose light, dark, or page appearance, a letter size from 12 to 24 pixels, a default chat order, and a default cleaner view. The size slider previews the settings screen immediately; choose **Save settings** to apply it to future suite windows, including Chat Cleaner. Existing Standard and Large preferences become 14 and 16 pixels. Each settings or library screen includes a back arrow. Settings and prompts are shared across clients; chat locks and history are separate.
 
 ### Prompt history and writing tools
 
 Prompt edits and changes to template defaults keep up to 50 earlier versions. **History** compares an earlier version with the current one and lets you restore it while retaining the version you replaced. Library exports include this history.
 
-**Prompt Coach** reviews a pasted request or, when you choose **Use current draft**, the client composer. Add context, requirements, and a preferred answer format to create an editable rewrite. **Improve wording** in the prompt editor returns the rewrite to the editor for review. This is a local checklist and formatting tool, not a model evaluation or a guarantee of better answers. It never sends a message automatically.
+**Prompt Coach** reviews a pasted request or, when you choose **Use current chat draft**, the client composer. Suggestions and clarity tips update as you type. The rewrite organizes the task, supplied context, requirements, and answer format into clear sections. Manually edited suggestions stay intact until you choose **Update suggestion** and confirm replacement. **Improve wording** in the prompt editor returns the rewrite to the editor for review. This is a local checklist and formatting tool, not a model evaluation or a guarantee of better answers. It never sends a message automatically.
 
 **Text tools** clean spacing and blank lines, convert common Markdown formatting to plain text, and display word and character counts. Fenced code keeps its internal spacing. Preview the result before copying.
 
@@ -102,7 +102,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.1.2 includes browser-specific troubleshooting guidance and page checks alongside conversation exports, prompt history, writing tools, bookmarks, saved views, and shortcuts.
+Version 2.2.0 adds a letter-size slider and live Prompt Coach feedback alongside browser-specific troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
 
 ## Privacy
 

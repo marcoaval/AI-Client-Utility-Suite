@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.2.0
+
+### Improved
+- Letter-size slider from 12 to 24 pixels with a live settings preview and saved sizing for suite dialogs and cleaner controls. Existing Standard and Large preferences migrate to 14 and 16 pixels.
+- Prompt Coach updates suggestions and clarity tips as inputs change, groups supplied information into task, context, requirements, and answer format, and preserves manually edited suggestions until replacement is confirmed.
+- Chat draft detection prioritizes supported composers and ignores disabled or read-only inputs.
+- The troubleshooting screen uses a general missing-button checklist followed by individual browser instructions.
+
+### Community
+- Thanks to @sam-cre for the readability feedback in issue #2. Adjustable letter sizing continues that work.
+
 ## 2.1.2
 
 ### Improved

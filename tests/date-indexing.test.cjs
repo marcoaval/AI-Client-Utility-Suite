@@ -40,7 +40,7 @@ test('text formatting removes Markdown outside code while preserving code spacin
 
 test('prompt coaching uses supplied details without inventing context or sending content', () => {
   const reviewed = h.coachPrompt('can you make it better', { context: 'For new readers', format: 'numbered steps', constraints: 'Under 200 words' });
-  assert.match(reviewed.rewrite, /^Please make it better/);
+  assert.match(reviewed.rewrite, /^Task:\nPlease make it better/);
   assert.match(reviewed.rewrite, /For new readers/);
   assert.match(reviewed.rewrite, /Under 200 words/);
   assert.match(reviewed.rewrite, /numbered steps/);
@@ -137,7 +137,12 @@ test('template fields with object property names stay ordinary text values', () 
 test('settings validate imported storage and retain sensible defaults', () => {
   const settings = h.normalizeSettings({ theme: 'invalid', textSize: 'huge', sort: 'oldest', cleanerView: 'selected' });
   assert.equal(settings.theme, 'auto');
-  assert.equal(settings.textSize, 'standard');
+  assert.equal(settings.fontSize, 14);
+  assert.equal(h.normalizeSettings({ textSize: 'large' }).fontSize, 16);
+  assert.equal(h.normalizeSettings({ fontSize: 19 }).fontSize, 19);
+  assert.equal(h.normalizeSettings({ fontSize: 100 }).fontSize, 24);
+  assert.equal(h.normalizeSettings({ fontSize: 5 }).fontSize, 12);
+  assert.equal(h.normalizeSettings({ fontSize: 'invalid' }).fontSize, 14);
   assert.equal(settings.sort, 'oldest');
   assert.equal(settings.cleanerView, 'all');
 });

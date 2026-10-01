@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.1.2
+// @version      2.2.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -61,7 +61,7 @@
   function normalizeSettings(value) {
     return {
       theme: ['auto', 'light', 'dark'].includes(value?.theme) ? value.theme : 'auto',
-      textSize: ['standard', 'large'].includes(value?.textSize) ? value.textSize : 'standard',
+      fontSize: (typeof value?.fontSize === 'number' || typeof value?.fontSize === 'string' && value.fontSize.trim()) && Number.isFinite(Number(value.fontSize)) ? Math.min(24, Math.max(12, Math.round(Number(value.fontSize)))) : value?.textSize === 'large' ? 16 : 14,
       sort: value?.sort === 'oldest' ? 'oldest' : 'newest',
       cleanerView: ['all', 'unprotected', 'suggested'].includes(value?.cleanerView) ? value.cleanerView : 'all',
       shortcutEnabled: value?.shortcutEnabled !== false
@@ -1178,19 +1178,19 @@
     if (/\b(better|good|nice|fix it|this thing|that thing)\b/i.test(original)) tips.push('Explain what “better” or “fixed” would look like, using a concrete example.');
     if (!options.format && !/\b(bullets?|table|steps?|json|markdown|paragraphs?|examples?|summary)\b/i.test(original)) tips.push('Choose an answer format if you have a preference.');
     if (!options.context && !/\b(because|for|context|background|audience|goal)\b/i.test(original)) tips.push('Include relevant context or who the answer is for.');
-    let request = original.replace(/^i (?:was wondering|wonder) if you (?:could|can)\s+/i, 'Please ').replace(/^can you (?:please )?/i, 'Please ');
+    let request = original.replace(/^i (?:was wondering|wonder) if you (?:could|can)\s+/i, 'Please ').replace(/^(?:can|could|would) you (?:please )?(?!not\b)/i, 'Please ');
     if (/^[a-z]/.test(request)) request = request[0].toUpperCase() + request.slice(1);
-    const parts = [request];
+    const parts = [`Task:\n${request}`];
     if (options.context?.trim()) parts.push(`Context:\n${options.context.trim()}`);
     if (options.constraints?.trim()) parts.push(`Requirements:\n${options.constraints.trim()}`);
-    if (options.format) parts.push(`Please respond with ${options.format}.`);
+    if (options.format) parts.push(`Answer format:\nPlease respond with ${options.format}.`);
     if (options.clarify) parts.push('If an essential detail is missing, ask a brief clarifying question first.');
     return { tips: tips.length ? tips : ['The request has a useful starting structure. Check the details and intended meaning before using it.'], rewrite: parts.join('\n\n') };
   }
 
   function currentDraft() {
-    const controls = [...document.querySelectorAll('#prompt-textarea,textarea,[contenteditable="true"][role="textbox"],[contenteditable="true"].ProseMirror')].filter(node => visible(node) && !utilityContains(node));
-    const input = controls.find(node => node.id === 'prompt-textarea') || controls[0];
+    const controls = [...document.querySelectorAll('#prompt-textarea,textarea,[contenteditable="true"][role="textbox"],[contenteditable="true"].ProseMirror,[contenteditable="true"][data-placeholder]')].filter(node => visible(node) && !utilityContains(node) && !node.disabled && !node.readOnly);
+    const input = controls.find(node => node.id === 'prompt-textarea') || controls.find(node => node.matches('[contenteditable="true"].ProseMirror')) || controls.find(node => node.closest('form')) || controls[0];
     return input ? (input.value ?? input.innerText ?? '').trim() : '';
   }
 
@@ -1199,20 +1199,23 @@
     box.innerHTML = `<p class="acus-muted">A local writing checklist, not a model score. Add the details that matter, then review the suggested wording. Nothing is sent automatically.</p>
       <button class="acus-draft">Use current chat draft</button><label class="acus-field">Your request<textarea class="acus-input acus-request"></textarea></label>
       <details><summary>Optional details</summary><label class="acus-field">Context or audience<textarea class="acus-input acus-context"></textarea></label><label class="acus-field">Requirements or limits<textarea class="acus-input acus-constraints"></textarea></label><label class="acus-field">Answer format<select class="acus-input acus-format"><option value="">Keep unspecified</option><option value="concise bullet points">Concise bullets</option><option value="numbered steps">Steps</option><option value="an explanation with examples">Explanation with examples</option><option value="a comparison table">Comparison table</option></select></label><label class="acus-check"><input type="checkbox" class="acus-clarify"> Ask for clarification when essential details are missing</label></details>
-      <button class="acus-primary acus-review">Review wording</button><ul class="acus-tips"></ul><label class="acus-field">Editable suggestion<textarea class="acus-input acus-rewrite"></textarea></label><div class="acus-prompt-actions"><button class="acus-copy">Copy suggestion</button><button class="acus-use acus-primary">Use in prompt editor</button></div><p class="acus-library-status" role="status"></p>`;
+      <button class="acus-primary acus-review">Update suggestion</button><ul class="acus-tips" aria-live="polite"></ul><label class="acus-field">Editable suggestion<textarea class="acus-input acus-rewrite"></textarea></label><div class="acus-prompt-actions"><button class="acus-copy">Copy suggestion</button><button class="acus-use acus-primary">Use in prompt editor</button></div><p class="acus-library-status" role="status"></p>`;
     const request = box.querySelector('.acus-request'), rewrite = box.querySelector('.acus-rewrite'), status = box.querySelector('[role="status"]');
     request.value = typeof initial === 'string' ? initial : '';
-    const review = () => {
+    let suggestionEdited = false;
+    const review = (replaceEdited = false) => {
       const result = coachPrompt(request.value, { context: box.querySelector('.acus-context').value, constraints: box.querySelector('.acus-constraints').value, format: box.querySelector('.acus-format').value, clarify: box.querySelector('.acus-clarify').checked });
       box.querySelector('.acus-tips').replaceChildren();
       result.tips.forEach(tip => { const li = document.createElement('li'); li.textContent = tip; box.querySelector('.acus-tips').append(li); });
-      rewrite.value = result.rewrite;
-      box.querySelector('.acus-copy').disabled = !result.rewrite;
-      box.querySelector('.acus-use').disabled = !result.rewrite;
+      if (!suggestionEdited || replaceEdited) { rewrite.value = result.rewrite; suggestionEdited = false; }
+      box.querySelector('.acus-copy').disabled = !rewrite.value.trim();
+      box.querySelector('.acus-use').disabled = !rewrite.value.trim();
+      status.textContent = suggestionEdited ? 'Your edited suggestion is kept. Choose Update suggestion to rebuild it from the request and details.' : result.rewrite ? 'Suggestion updated locally. Review it before copying.' : 'Enter a request to get a suggestion.';
     };
-    box.querySelector('.acus-draft').onclick = () => { const draft = currentDraft(); if (draft) { request.value = draft; review(); status.textContent = 'Draft copied locally for review. Your chat draft is unchanged.'; } else status.textContent = 'No supported chat draft was found. Paste your request above.'; };
-    box.querySelector('.acus-review').onclick = review;
-    rewrite.oninput = () => { box.querySelector('.acus-copy').disabled = !rewrite.value.trim(); box.querySelector('.acus-use').disabled = !rewrite.value.trim(); };
+    box.querySelector('.acus-draft').onclick = () => { const draft = currentDraft(); if (draft) { request.value = draft; review(); if (!suggestionEdited) status.textContent = 'Draft copied locally for review. Your chat draft is unchanged.'; } else status.textContent = 'No supported chat draft was found. Paste your request above.'; };
+    box.querySelector('.acus-review').onclick = () => { if (suggestionEdited && !confirm('Replace your edited suggestion with a new version?')) return; review(true); };
+    for (const control of box.querySelectorAll('.acus-request,.acus-context,.acus-constraints,.acus-format,.acus-clarify')) control.addEventListener('input', () => review());
+    rewrite.oninput = () => { suggestionEdited = true; box.querySelector('.acus-copy').disabled = !rewrite.value.trim(); box.querySelector('.acus-use').disabled = !rewrite.value.trim(); };
     box.querySelector('.acus-copy').onclick = () => copyText(rewrite.value, message => { status.textContent = message; });
     box.querySelector('.acus-use').hidden = !onUse;
     box.querySelector('.acus-use').onclick = () => onUse?.(rewrite.value);
@@ -1315,7 +1318,7 @@
   function applyAppearance(panel) {
     const theme = cleanerTheme();
     for (const [key, value] of Object.entries(theme)) panel.style.setProperty(`--acus-${key}`, value);
-    panel.dataset.textSize = loadSettings().textSize;
+    panel.style.setProperty('--acus-font-size', `${loadSettings().fontSize}px`);
   }
 
   function settingsScreen() {
@@ -1328,7 +1331,6 @@
     const choices = {};
     for (const [key, label, options] of [
       ['theme', 'Appearance', [['auto', 'Match the page'], ['light', 'Light'], ['dark', 'Dark']]],
-      ['textSize', 'Text size', [['standard', 'Standard'], ['large', 'Large']]],
       ['sort', 'Default chat order', [['newest', 'Newest first'], ['oldest', 'Oldest first']]],
       ['cleanerView', 'Default cleaner view', [['all', 'All chats'], ['unprotected', 'Hide protected'], ['suggested', 'Suggested only']]]
     ]) {
@@ -1343,6 +1345,12 @@
       field.append(select);
       box.append(field);
     }
+    const sizeField = document.createElement('label'); sizeField.className = 'acus-field';
+    const sizeLabel = document.createElement('span'); sizeLabel.textContent = 'Letter size';
+    const size = document.createElement('input'); size.type = 'range'; size.min = '12'; size.max = '24'; size.step = '1'; size.value = String(settings.fontSize); size.setAttribute('aria-label', 'Letter size');
+    const sizeValue = document.createElement('output');
+    const previewSize = () => { sizeValue.textContent = `${size.value} px`; box.closest('.acus-modal')?.style.setProperty('--acus-font-size', `${size.value}px`); };
+    size.oninput = previewSize; sizeField.append(sizeLabel, size, sizeValue); box.append(sizeField);
     const save = button('Save settings');
     const shortcutLabel = document.createElement('label'); shortcutLabel.className = 'acus-check';
     const shortcut = document.createElement('input'); shortcut.type = 'checkbox'; shortcut.checked = settings.shortcutEnabled;
@@ -1351,7 +1359,7 @@
     const status = document.createElement('p');
     status.setAttribute('role', 'status');
     save.onclick = () => {
-      const next = normalizeSettings({ ...Object.fromEntries(Object.entries(choices).map(([key, select]) => [key, select.value])), shortcutEnabled: shortcut.checked });
+      const next = normalizeSettings({ ...Object.fromEntries(Object.entries(choices).map(([key, select]) => [key, select.value])), fontSize: Number(size.value), shortcutEnabled: shortcut.checked });
       GM_setValue(SETTINGS_KEY, JSON.stringify(next));
       GM_setValue(CHAT_SORT_KEY, next.sort);
       applyAppearance(box.closest('.acus-modal'));
@@ -1359,6 +1367,7 @@
     };
     box.append(save, status);
     modal('Settings', box);
+    previewSize();
   }
 
   function startOfDay(date) {
@@ -1523,7 +1532,6 @@
     const theme = cleanerTheme();
     const overlay = document.createElement('div');
     overlay.id = 'vanick-cleaner-overlay';
-    overlay.dataset.textSize = loadSettings().textSize;
     overlay.style.cssText = `
       --vc-panel:${theme.panel};
       --vc-surface:${theme.surface};
@@ -1643,8 +1651,6 @@
       #vanick-cleaner-overlay .vc-footer>div:first-child{flex-basis:100%!important}
       #vanick-cleaner-overlay .vc-footer-actions{width:100%;align-items:end;justify-content:flex-end;flex-wrap:wrap}
       #vanick-cleaner-overlay .vc-footer-actions>.vc-field{margin-right:auto}
-      #vanick-cleaner-overlay[data-text-size="large"] .vc-button,#vanick-cleaner-overlay[data-text-size="large"] .vc-input,#vanick-cleaner-overlay[data-text-size="large"] .vc-chat-title{font-size:16px}
-      #vanick-cleaner-overlay[data-text-size="large"] .vc-detail,#vanick-cleaner-overlay[data-text-size="large"] .vc-subtitle,#vanick-cleaner-overlay[data-text-size="large"] .vc-field,#vanick-cleaner-overlay[data-text-size="large"] .vc-status{font-size:14px}
       #vanick-cleaner-overlay .vc-status{font-size:12px;color:var(--vc-text)}
       #vanick-cleaner-overlay .vc-action-group{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px;border:1px solid var(--vc-border);border-radius:10px}
       #vanick-cleaner-overlay .vc-action-label{font-size:11px;font-weight:750;color:var(--vc-muted);width:100%}
@@ -1661,8 +1667,10 @@
       #vanick-cleaner-overlay .vc-range{flex-shrink:0;border-bottom:1px solid var(--vc-border)}
       #vanick-cleaner-overlay .vc-range>summary{padding:12px 20px;min-height:44px;color:var(--vc-text);font-size:13px;font-weight:700;cursor:pointer;background:var(--vc-accent-soft)}
       #vanick-cleaner-overlay .vc-range>summary:focus-visible{outline:3px solid var(--vc-accent);outline-offset:-3px}
-      #vanick-cleaner-overlay[data-text-size="large"] .vc-button,#vanick-cleaner-overlay[data-text-size="large"] .vc-input,#vanick-cleaner-overlay[data-text-size="large"] .vc-chat-title{font-size:16px}
+      #vanick-cleaner-overlay .vc-panel,#vanick-cleaner-overlay .vc-button,#vanick-cleaner-overlay .vc-input,#vanick-cleaner-overlay .vc-chat-title,#vanick-cleaner-overlay .vc-summary,#vanick-cleaner-overlay .vc-detail,#vanick-cleaner-overlay .vc-subtitle,#vanick-cleaner-overlay .vc-field,#vanick-cleaner-overlay .vc-status,#vanick-cleaner-overlay .vc-selection-text,#vanick-cleaner-overlay .vc-range>summary{font-size:var(--acus-font-size,14px)}
+      #vanick-cleaner-overlay .vc-panel .vc-button,#vanick-cleaner-overlay .vc-panel .vc-input{font-size:var(--acus-font-size,14px);height:auto;line-height:1.3}
     `;
+    overlay.style.setProperty('--acus-font-size', `${loadSettings().fontSize}px`);
     overlay.appendChild(style);
 
     const panel = document.createElement('div');
@@ -2915,7 +2923,7 @@
       let storage = 'Unavailable';
       try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
       report.value = [
-        'AI Client Utility Suite 2.1.2',
+        'AI Client Utility Suite 2.2.0',
         `Checked: ${new Date().toISOString()}`,
         `Site: ${location.hostname}`,
         `Page load: ${document.readyState}`,
@@ -3044,7 +3052,7 @@
       .acus-modal .acus-template-value{min-height:68px}
       .acus-modal .acus-row{color:var(--acus-text)}
       .acus-modal .acus-row:hover,.acus-modal .acus-archive-row:hover,.acus-modal .acus-archive-row.acus-selected{background:var(--acus-surfaceHover)}
-      .acus-modal[data-text-size="large"],.acus-modal[data-text-size="large"] button,.acus-modal[data-text-size="large"] .acus-input,.acus-modal[data-text-size="large"] .acus-menu-btn span{font-size:16px}
+      .acus-modal,.acus-modal button,.acus-modal .acus-input,.acus-modal .acus-menu-btn span,.acus-modal .acus-menu-btn strong,.acus-modal .acus-head strong{font-size:var(--acus-font-size,14px)}
       .acus-modal .acus-tool-grid,.acus-modal .acus-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
       .acus-modal .acus-compare textarea,.acus-modal .acus-preview{min-height:220px}
       .acus-modal summary{cursor:pointer;padding:12px 0;min-height:44px;font-weight:650}
