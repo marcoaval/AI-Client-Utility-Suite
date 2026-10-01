@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.2.1
+// @version      2.2.2
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -1198,7 +1198,11 @@
     const box = document.createElement('div');
     box.innerHTML = `<p class="acus-muted">A local writing checklist, not a model score. Add the details that matter, then review the suggested wording. Nothing is sent automatically.</p>
       <button class="acus-draft">Use current chat draft</button><label class="acus-field">Your request<textarea class="acus-input acus-request"></textarea></label>
-      <details><summary>Optional details</summary><label class="acus-field">Context or audience<textarea class="acus-input acus-context"></textarea></label><label class="acus-field">Requirements or limits<textarea class="acus-input acus-constraints"></textarea></label><label class="acus-field">Answer format<select class="acus-input acus-format"><option value="">Keep unspecified</option><option value="concise bullet points">Concise bullets</option><option value="numbered steps">Steps</option><option value="an explanation with examples">Explanation with examples</option><option value="a comparison table">Comparison table</option></select></label><label class="acus-check"><input type="checkbox" class="acus-clarify"> Ask for clarification when essential details are missing</label></details>
+      <details><summary>Optional details</summary><p class="acus-muted">Fill in only what matters for your request. You can leave any of these blank.</p>
+      <label class="acus-field">Context or audience<textarea class="acus-input acus-context" aria-describedby="acus-coach-context-help"></textarea></label><p id="acus-coach-context-help" class="acus-muted">Give background or say who the answer is for. Example: “This is for someone learning Python for the first time.”</p>
+      <label class="acus-field">Requirements or limits<textarea class="acus-input acus-constraints" aria-describedby="acus-coach-constraints-help"></textarea></label><p id="acus-coach-constraints-help" class="acus-muted">Say what the answer must include or avoid, or set a length limit. Example: “Keep it under 200 words and include one example.”</p>
+      <label class="acus-field">Answer format<select class="acus-input acus-format" aria-describedby="acus-coach-format-help"><option value="">Keep unspecified</option><option value="concise bullet points">Concise bullets</option><option value="numbered steps">Steps</option><option value="an explanation with examples">Explanation with examples</option><option value="a comparison table">Comparison table</option></select></label><p id="acus-coach-format-help" class="acus-muted">Choose how the answer should be organized. Bullets suit quick points, steps suit instructions, examples help explain ideas, and a table helps compare options. Keep unspecified leaves the format open.</p>
+      <label class="acus-check"><input type="checkbox" class="acus-clarify" aria-describedby="acus-coach-clarify-help"> Ask for clarification when essential details are missing</label><p id="acus-coach-clarify-help" class="acus-muted">Adds a request to ask a question before answering if an important detail is missing. Example: ask about your budget before suggesting a computer. This checkbox adds wording to your prompt; it does not start a conversation.</p></details>
       <button class="acus-primary acus-review">Update suggestion</button><ul class="acus-tips" aria-live="polite"></ul><label class="acus-field">Editable suggestion<textarea class="acus-input acus-rewrite"></textarea></label><div class="acus-prompt-actions"><button class="acus-copy">Copy suggestion</button><button class="acus-use acus-primary">Use in prompt editor</button></div><p class="acus-library-status" role="status"></p>`;
     const request = box.querySelector('.acus-request'), rewrite = box.querySelector('.acus-rewrite'), status = box.querySelector('[role="status"]');
     request.value = typeof initial === 'string' ? initial : '';
@@ -2925,7 +2929,7 @@
       let storage = 'Unavailable';
       try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
       report.value = [
-        'AI Client Utility Suite 2.2.1',
+        'AI Client Utility Suite 2.2.2',
         `Checked: ${new Date().toISOString()}`,
         `Site: ${location.hostname}`,
         `Page load: ${document.readyState}`,

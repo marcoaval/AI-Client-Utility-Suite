@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.2
+
+### Improved
+- Prompt Coach explains context or audience, requirements or limits, answer format, and clarification with examples beneath each optional control. Help text is linked to controls for screen readers.
+
 ## 2.2.1
 
 ### Improved

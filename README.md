@@ -102,7 +102,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.2.1 clarifies cleaner selection labels alongside the letter-size slider, live Prompt Coach feedback, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
+Version 2.2.2 explains each optional Prompt Coach field with examples, alongside clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
 
 ## Privacy
 
