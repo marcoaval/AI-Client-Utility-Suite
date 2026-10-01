@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.0.0
+
+### Added
+- Conversation capture with Markdown, plain text, and JSON previews, individual downloads, and ZIP exports with an index and coverage manifest. Captures include loaded messages only and always report incomplete coverage.
+- Resumable local export drafts, pause controls, delayed loading checks, and retry for failed captures. Reopen the tool to resume after a page reload.
+- Prompt version history with comparison and restore, retaining up to 50 earlier versions. Library backups include version history and remain compatible with older plain prompt imports.
+- A local Prompt Coach that checks request clarity and creates an editable rewrite using supplied context, requirements, and answer format. Prompt editor integration requires review before saving or copying.
+- Text spacing cleanup, common Markdown to plain text conversion, and word and character counts, with fenced code spacing preserved.
+- Chat bookmarks independent of cleanup locks, and saved cleaner views for search, filters, and sorting without changing selections.
+- A searchable tool and prompt shortcut menu, opened with Alt + Shift + K and configurable in Settings.
+
+### Improved
+- Tools are grouped into Chats, Writing, and Preferences, with search across groups and back arrows for each screen.
+- Selected cleaner conversations can be passed to export and returned to the same cleaner view and selection.
+
+### Community
+- Thanks to @sam-cre for the library spacing and backup feedback in issues #2 and #3 and organization feedback in issue #5. The grouped tools, expanded backups, bookmarks, and saved views build on those suggestions.
+
 ## 1.0.0
 
 ### Added

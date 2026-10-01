@@ -37,6 +37,32 @@ Use folders, favorites, and search to organize the library. **Edit** updates pro
 ### Settings
 Choose light, dark, or page appearance, standard or large text, a default chat order, and a default cleaner view. Preferences apply to suite windows, and each settings or library screen includes a back arrow. Settings and prompts are shared across clients; chat locks and history are separate.
 
+### Prompt history and writing tools
+
+Prompt edits and changes to template defaults keep up to 50 earlier versions. **History** compares an earlier version with the current one and lets you restore it while retaining the version you replaced. Library exports include this history.
+
+**Prompt Coach** reviews a pasted request or, when you choose **Use current draft**, the client composer. Add context, requirements, and a preferred answer format to create an editable rewrite. **Improve wording** in the prompt editor returns the rewrite to the editor for review. This is a local checklist and formatting tool, not a model evaluation or a guarantee of better answers. It never sends a message automatically.
+
+**Text tools** clean spacing and blank lines, convert common Markdown formatting to plain text, and display word and character counts. Fenced code keeps its internal spacing. Preview the result before copying.
+
+### Bookmarks, saved views, and shortcuts
+
+Use the star beside a cleaner row or **Chat bookmarks** to save a conversation link. Bookmarks are separate from locks and do not protect a chat from cleanup. Both are stored separately for each client.
+
+**Saved cleaner views** remember a title search, view filter, and sorting choice. They do not save selections or number ranges. Applying a view preserves the current selection, including chats hidden by that view.
+
+The tools menu groups tools into Chats, Writing, and Preferences, with search across all groups. **Alt + Shift + K** opens a searchable shortcut menu for tools and saved prompts. Disable the keyboard shortcut in Settings if needed.
+
+### Conversation export
+
+Choose conversations in **Conversation export**, or use **Export selected** in Chat Cleaner. Capture opens each selected chat and waits for its loaded messages to settle, allowing up to 90 seconds per chat. Pause and resume are available; failed captures can be retried. If navigation reloads the page, reopen the tool and choose **Resume draft**.
+
+Review captured messages as Markdown, plain text, or JSON before downloading one conversation or a ZIP containing conversation files, an index, and a coverage manifest. Code blocks retain their spacing.
+
+These are snapshots of loaded message content, not complete account backups. Unloaded messages, alternate branches, attachment files, and unsupported content may be missing. Every export explicitly reports incomplete coverage. Load older messages in the client when needed. Client layout changes can prevent capture.
+
+The resumable export draft stores captured conversation text locally until replaced or cleared with **Clear export draft**. Download any draft you want to retain before replacing it.
+
 ### Bulk Archive
 Load the full chat history, filter conversations by title, select the chats you want, and archive multiple conversations in one confirmed batch.
 
@@ -74,17 +100,11 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 1.0.0 includes prompt templates, library folders and favorites, individual chat locks, cleaner archiving, appearance settings, and history coverage alongside search, numbered ranges, cleanup progress, and retries.
+Version 2.0.0 adds conversation snapshots and ZIP exports, prompt version history, a local prompt coach, text tools, bookmarks, saved cleaner views, and a shortcut menu.
 
 ## Privacy
 
-Prompts, template defaults, settings, chat locks, and cached sidebar metadata are stored locally through Tampermonkey's userscript storage. The userscript does not send saved prompts to an external server.
-
-## Roadmap
-
-- Prompt version history
-- Markdown and plain text formatting tools
-- Local writing statistics
+Prompts, earlier prompt versions, template defaults, settings, bookmarks, saved views, chat locks, cached sidebar metadata, and captured export drafts are stored locally through Tampermonkey's userscript storage. The userscript does not send this saved content to an external server. Prompt and conversation exports can contain personal text; share only the files you intend to share. The prompt coach and text tools process text locally.
 
 ## License
 

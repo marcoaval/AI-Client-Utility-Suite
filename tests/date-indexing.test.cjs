@@ -7,12 +7,104 @@ const { test } = require('node:test');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../ai_client_utility_suite.user.js'), 'utf8');
 const context = vm.createContext({
   location: { hostname: 'chatgpt.com' }, GM_getValue: () => '',
-  document: {}, console,
+  document: {}, console, TextEncoder, TextDecoder,
 });
 vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) +
-  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat }; })();', context);
+  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat, revisePrompt, promptSnapshot, formatText, coachPrompt, validChatHref, normalizeView, toggleBookmark, loadBookmarks, snapshotText, exportFilename, crc32, zipFiles, backupFiles, domMessageText }; })();', context);
 const h = context.helpers;
 const day = value => h.parseDateInput(value);
+
+test('prompt revisions preserve identity, limit history, and keep restored wording recoverable', () => {
+  let prompt = h.normalizePrompts([{ name: 'Prompt', text: 'Original' }])[0];
+  const originalId = prompt.id;
+  for (let i = 0; i < 55; i++) prompt = h.revisePrompt(prompt, { ...prompt, text: `Version ${i}` }, i + 1);
+  assert.equal(prompt.id, originalId);
+  assert.equal(prompt.history.length, 50);
+  const restored = h.revisePrompt(prompt, { ...prompt, ...h.promptSnapshot(prompt.history[0]) }, 60);
+  assert.equal(restored.history.at(-1).text, 'Version 54');
+  const roundTrip = h.normalizePrompts(JSON.parse(JSON.stringify([restored])))[0];
+  assert.equal(roundTrip.id, originalId);
+  assert.equal(roundTrip.history.length, 50);
+  assert.equal(h.revisePrompt(roundTrip, { ...roundTrip, folder: 'Other' }).history.length, 50);
+});
+
+test('text formatting removes Markdown outside code while preserving code spacing', () => {
+  const input = '# Heading\r\n\r\n**Bold** [link](https://example.com)   \r\n```js\r\n  const s = "**literal**";  \r\n```';
+  const plain = h.formatText(input, 'plain');
+  assert.match(plain, /^Heading/);
+  assert.match(plain, /Bold link \(https:\/\/example.com\)/);
+  assert.match(plain, /  const s = "\*\*literal\*\*";  /);
+  assert.doesNotMatch(plain, /```/);
+  assert.match(h.formatText(input), /```js\n  const s = "\*\*literal\*\*";  \n```/);
+});
+
+test('prompt coaching uses supplied details without inventing context or sending content', () => {
+  const reviewed = h.coachPrompt('can you make it better', { context: 'For new readers', format: 'numbered steps', constraints: 'Under 200 words' });
+  assert.match(reviewed.rewrite, /^Please make it better/);
+  assert.match(reviewed.rewrite, /For new readers/);
+  assert.match(reviewed.rewrite, /Under 200 words/);
+  assert.match(reviewed.rewrite, /numbered steps/);
+  assert.ok(reviewed.tips.some(tip => tip.includes('concrete example')));
+  assert.doesNotMatch(h.coachPrompt('Explain trees').rewrite, /Context:|Requirements:/);
+});
+
+test('bookmarks are separate from locks and reject unsafe paths', () => {
+  const store = new Map(), previous = context.GM_getValue;
+  context.GM_getValue = (key, fallback) => store.get(key) ?? fallback;
+  context.GM_setValue = (key, value) => store.set(key, value);
+  const chat = { href: '/c/bookmark', title: 'Important' };
+  assert.equal(h.toggleBookmark(chat), true);
+  assert.equal(h.loadBookmarks().length, 1);
+  assert.equal(h.isChatLocked(chat), false);
+  assert.equal(h.toggleBookmark(chat), false);
+  assert.equal(h.loadBookmarks().length, 0);
+  for (const href of ['javascript:alert(1)', '//example.com', '/c/../../file', '/settings']) assert.equal(h.validChatHref(href), false);
+  context.GM_getValue = previous; delete context.GM_setValue;
+});
+
+test('saved views contain presentation settings rather than chat selections', () => {
+  const view = h.normalizeView({ name: ' Work ', query: 'work', sort: 'oldest', view: 'unprotected', selected: ['/c/one'] });
+  assert.equal(view.name, 'Work'); assert.equal(view.query, 'work');
+  assert.equal(view.sort, 'oldest'); assert.equal(view.view, 'unprotected');
+  assert.equal(Object.hasOwn(view, 'selected'), false);
+});
+
+test('conversation files and ZIP manifest state incomplete coverage and pending captures', () => {
+  const snapshot = { title: 'Code', source: 'https://chatgpt.com/c/code', capturedAt: '2026-09-30T00:00:00Z', complete: false, coverage: 'Loaded messages only', messages: [{ role: 'user', text: 'Question', markdown: 'Question' }, { role: 'assistant', text: 'const x = 1;', markdown: '```js\nconst x = 1;\n```' }] };
+  assert.match(h.snapshotText(snapshot, 'md'), /```js\nconst x = 1;\n```/);
+  assert.match(h.snapshotText(snapshot, 'txt'), /const x = 1;/);
+  assert.equal(JSON.parse(h.snapshotText(snapshot, 'json')).complete, false);
+  const files = h.backupFiles({ captured: [snapshot], failed: [], targets: [{ href: '/c/pending' }], cursor: 0 }, 'md');
+  const manifest = JSON.parse(files.find(file => file.name === 'manifest.json').text);
+  assert.equal(manifest.complete, false); assert.equal(manifest.pending.length, 1);
+  assert.equal(manifest.conversations[0].messageCount, 2);
+  assert.doesNotMatch(h.exportFilename('../CON:<test>', 0, 'md'), /[<>:"/\\]/);
+});
+
+test('ZIP files use valid CRCs, UTF8 names, and matching directory offsets', () => {
+  assert.equal(h.crc32(new TextEncoder().encode('123456789')), 0xcbf43926);
+  const files = [{ name: 'Résumé.md', text: 'First' }, { name: 'index.md', text: 'Second' }];
+  const bytes = h.zipFiles(files), view = new DataView(bytes.buffer);
+  let offset = 0;
+  for (const file of files) {
+    assert.equal(view.getUint32(offset, true), 0x04034b50);
+    const size = view.getUint32(offset + 18, true), nameLength = view.getUint16(offset + 26, true);
+    assert.equal(new TextDecoder().decode(bytes.slice(offset + 30, offset + 30 + nameLength)), file.name);
+    assert.equal(new TextDecoder().decode(bytes.slice(offset + 30 + nameLength, offset + 30 + nameLength + size)), file.text);
+    offset += 30 + nameLength + size;
+  }
+  assert.equal(view.getUint32(offset, true), 0x02014b50);
+  assert.equal(view.getUint32(bytes.length - 22, true), 0x06054b50);
+  assert.equal(view.getUint32(bytes.length - 6, true), offset);
+  assert.equal(view.getUint16(bytes.length - 12, true), files.length);
+});
+
+test('DOM code serialization uses a fence longer than code backticks', () => {
+  const code = { textContent: 'x = "```";\n  next();', className: 'language-js' };
+  const node = { nodeType: 1, tagName: 'PRE', getAttribute: () => null, querySelector: () => code };
+  assert.match(h.domMessageText(node), /````js\nx = "```";\n  next\(\);\n````/);
+  assert.equal(h.domMessageText(node, true), '\nx = "```";\n  next();\n');
+});
 
 test('templates deduplicate field names and substitute multiline values literally', () => {
   const text = 'Explain {{ topic }} at {{level}}. Repeat {{topic}}.';

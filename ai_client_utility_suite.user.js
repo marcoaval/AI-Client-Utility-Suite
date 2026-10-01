@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      1.0.0
+// @version      2.0.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -23,6 +23,9 @@
   const SETTINGS_KEY = "aiClientUtilitySuite.settings";
   const LOCKS_KEY = "aiClientUtilitySuite.lockedChats";
   const SCAN_KEY = "aiClientUtilitySuite.historyScan";
+  const BOOKMARK_KEY = 'aiClientUtilitySuite.bookmarks';
+  const VIEW_KEY = 'aiClientUtilitySuite.cleanerViews';
+  const EXPORT_KEY = 'aiClientUtilitySuite.exportDraft';
   const DEFAULT_CLEANER_FILTERS = {
     suggested: [
       "health", "medical", "doctor", "symptom", "injury",
@@ -41,6 +44,10 @@
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   let cachedHistory = null;
   let libraryView = { query: '', folder: '', favorites: false };
+  let menuGroup = 'Chats';
+  let paletteQuery = '';
+  let exportRunning = false;
+  let exportStopped = false;
 
   const platform = () => location.hostname.includes("claude.ai") ? "Claude" : "ChatGPT";
 
@@ -56,7 +63,8 @@
       theme: ['auto', 'light', 'dark'].includes(value?.theme) ? value.theme : 'auto',
       textSize: ['standard', 'large'].includes(value?.textSize) ? value.textSize : 'standard',
       sort: value?.sort === 'oldest' ? 'oldest' : 'newest',
-      cleanerView: ['all', 'unprotected', 'suggested'].includes(value?.cleanerView) ? value.cleanerView : 'all'
+      cleanerView: ['all', 'unprotected', 'suggested'].includes(value?.cleanerView) ? value.cleanerView : 'all',
+      shortcutEnabled: value?.shortcutEnabled !== false
     };
   }
 
@@ -124,6 +132,7 @@
     if (!Array.isArray(values)) return [];
     const seen = new Set();
     const prompts = [];
+    const ids = new Set();
 
     for (const value of values) {
       const name = String(value?.name || "").trim();
@@ -135,10 +144,51 @@
       seen.add(key);
       const fields = templateFields(text);
       const defaults = Object.fromEntries(fields.map(field => [field, typeof value?.defaults?.[field] === 'string' ? value.defaults[field] : '']));
-      prompts.push({ name, text, folder: String(value?.folder || '').trim(), favorite: value?.favorite === true, defaults });
+      let id = typeof value?.id === 'string' && value.id ? value.id : promptId(key);
+      if (ids.has(id)) id = promptId(key);
+      while (ids.has(id)) id += '_';
+      ids.add(id);
+      const history = Array.isArray(value?.history) ? value.history.filter(item => typeof item?.name === 'string' && typeof item?.text === 'string' && Number.isFinite(item?.at)).slice(-50).map(item => ({
+        name: item.name, text: item.text, defaults: Object.fromEntries(templateFields(item.text).map(field => [field, typeof item.defaults?.[field] === 'string' ? item.defaults[field] : ''])), at: item.at
+      })) : [];
+      prompts.push({ id, name, text, folder: String(value?.folder || '').trim(), favorite: value?.favorite === true, defaults, history });
     }
 
     return prompts;
+  }
+
+  function promptId(text) {
+    let hash = 2166136261, other = 5381;
+    for (const character of text) { hash = Math.imul(hash ^ character.codePointAt(0), 16777619); other = Math.imul(other, 33) ^ character.codePointAt(0); }
+    return `prompt_${(hash >>> 0).toString(16)}_${(other >>> 0).toString(16)}`;
+  }
+
+  function promptSnapshot(prompt) { return { name: prompt.name, text: prompt.text, defaults: prompt.defaults || {} }; }
+
+  function revisePrompt(previous, next, at = Date.now()) {
+    if (!previous) return next;
+    const changed = JSON.stringify(promptSnapshot(previous)) !== JSON.stringify(promptSnapshot(next));
+    return { ...next, id: previous.id, history: changed ? [...(previous.history || []), { ...promptSnapshot(previous), at }].slice(-50) : previous.history || [] };
+  }
+
+  function clientKey(key) { return `${key}.${platform().toLowerCase()}`; }
+  function validChatHref(href) { return typeof href === 'string' && /^\/(c|chat)\/[a-zA-Z0-9_-]+\/?$/.test(href); }
+  function loadBookmarks() {
+    const saved = readStored(clientKey(BOOKMARK_KEY), []);
+    return Array.isArray(saved) ? saved.filter(item => validChatHref(item?.href) && typeof item?.title === 'string') : [];
+  }
+  function toggleBookmark(chat) {
+    const saved = loadBookmarks();
+    const found = saved.some(item => item.href === chat.href);
+    GM_setValue(clientKey(BOOKMARK_KEY), JSON.stringify(found ? saved.filter(item => item.href !== chat.href) : [...saved, { href: chat.href, title: chat.title, at: Date.now() }]));
+    return !found;
+  }
+  function normalizeView(value) {
+    return { name: String(value?.name || '').trim(), query: String(value?.query || ''), view: ['all', 'selected', 'unprotected', 'suggested'].includes(value?.view) ? value.view : 'all', sort: value?.sort === 'oldest' ? 'oldest' : 'newest' };
+  }
+  function loadViews() {
+    const values = readStored(clientKey(VIEW_KEY), []);
+    return Array.isArray(values) ? values.map(normalizeView).filter(view => view.name) : [];
   }
 
   function loadPrompts() {
@@ -815,13 +865,14 @@
     applyAppearance(wrap.querySelector('.acus-modal'));
     const back = wrap.querySelector('.acus-back');
     back.hidden = !onBack;
-    back.onclick = () => { wrap.remove(); onBack?.(); };
-    const dismiss = () => { wrap.remove(); document.getElementById(APP_ID + '-launcher')?.focus(); };
+    back.onclick = () => { if (exportRunning) return; wrap.remove(); onBack?.(); };
+    const dismiss = () => { if (exportRunning) return; wrap.remove(); document.getElementById(APP_ID + '-launcher')?.focus(); };
     wrap.querySelector(".acus-close").onclick = dismiss;
     wrap.querySelector(".acus-backdrop").onclick = e => { if (e.target === e.currentTarget) dismiss(); };
     document.body.append(wrap);
     wrap.addEventListener('keydown', event => {
       if (event.key === 'Escape') {
+        if (exportRunning) return;
         wrap.remove();
         document.getElementById(APP_ID + '-launcher')?.focus();
       }
@@ -885,7 +936,7 @@
   function exportPrompts(prompts = loadPrompts()) {
     const payload = JSON.stringify({
       format: "ai-client-utility-suite-prompts",
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       prompts
     }, null, 2);
@@ -979,12 +1030,14 @@
         favorite.setAttribute('aria-pressed', String(p.favorite));
         favorite.onclick = () => { const next = loadPrompts(); next[index].favorite = !next[index].favorite; savePrompts(next); render(); };
         const edit = button('Edit'); edit.onclick = () => promptEditor(p, index);
+        const history = button(`History (${p.history.length})`); history.disabled = !p.history.length;
+        history.onclick = () => promptHistory(p.id);
         const del = button('Delete');
         del.onclick = () => {
           if (!confirm(`Delete the saved prompt "${p.name}"?`)) return;
           const next = loadPrompts(); next.splice(index, 1); savePrompts(next); render(); setStatus('Prompt deleted.');
         };
-        actions.append(use, favorite, edit, del);
+        actions.append(use, favorite, edit, history, del);
         row.append(name, detail, preview, actions); list.append(row);
       }
     };
@@ -1010,7 +1063,7 @@
       <label class="acus-field">Folder<input class="acus-input acus-folder" placeholder="Optional, for example Work" list="acus-folders"></label><datalist id="acus-folders"></datalist>
       <label class="acus-field">Prompt text<textarea class="acus-input acus-text" required placeholder="Explain {{topic}} for someone at {{experience level}}."></textarea></label>
       <label class="acus-check"><input class="acus-favorite" type="checkbox"> Add to favorites</label>
-      <p class="acus-muted acus-field-count"></p><div class="acus-prompt-actions"><button class="acus-save acus-primary">Save prompt</button><button class="acus-preview">Preview template</button></div><p class="acus-library-status" role="status"></p>`;
+      <p class="acus-muted acus-field-count"></p><div class="acus-prompt-actions"><button class="acus-save acus-primary">Save prompt</button><button class="acus-preview">Preview template</button><button class="acus-coach">Improve wording</button></div><p class="acus-library-status" role="status"></p>`;
     const name = box.querySelector('.acus-title'), text = box.querySelector('.acus-text'), folder = box.querySelector('.acus-folder'), favorite = box.querySelector('.acus-favorite');
     name.value = prompt.name; text.value = prompt.text; folder.value = prompt.folder || ''; favorite.checked = prompt.favorite;
     for (const value of new Set(loadPrompts().map(p => p.folder).filter(Boolean))) { const option = document.createElement('option'); option.value = value; box.querySelector('datalist').append(option); }
@@ -1021,7 +1074,7 @@
     box.querySelector('.acus-save').onclick = () => {
       const value = draft();
       if (!value.name || !value.text) { status.textContent = 'Enter a name and prompt text before saving.'; (!value.name ? name : text).focus(); return; }
-      const next = loadPrompts(); if (index === null) next.unshift(value); else next[index] = value;
+      const next = loadPrompts(); if (index === null) next.unshift(value); else next[index] = revisePrompt(next[index], value);
       savePrompts(next);
       libraryView = { query: '', folder: value.folder, favorites: false };
       promptLibrary('Prompt saved.');
@@ -1031,6 +1084,10 @@
       if (!value.text) { status.textContent = 'Enter prompt text to preview.'; text.focus(); return; }
       promptTemplate(value, null, () => { modal(index === null ? 'New prompt' : 'Edit prompt', box, promptLibrary, 'Back to Prompt Library'); });
     };
+    box.querySelector('.acus-coach').onclick = () => promptCoach(text.value, revised => {
+      text.value = revised; update();
+      modal(index === null ? 'New prompt' : 'Edit prompt', box, promptLibrary, 'Back to Prompt Library');
+    }, () => modal(index === null ? 'New prompt' : 'Edit prompt', box, promptLibrary, 'Back to Prompt Library'));
     modal(index === null ? 'New prompt' : 'Edit prompt', box, promptLibrary, 'Back to Prompt Library'); name.focus();
   }
 
@@ -1055,11 +1112,146 @@
     actions.append(copy);
     if (index !== null) {
       const save = button('Save these values as defaults');
-      save.onclick = () => { const next = loadPrompts(); next[index].defaults = values(); savePrompts(next); status.textContent = 'Default values saved for this template.'; };
+      save.onclick = () => { const next = loadPrompts(); next[index] = revisePrompt(next[index], { ...next[index], defaults: values() }); savePrompts(next); status.textContent = 'Default values saved for this template.'; };
       actions.append(save);
     }
     box.append(actions, status); update();
     modal(prompt.name || 'Template preview', box, onBack, 'Back to previous screen'); Object.values(inputs)[0]?.focus();
+  }
+
+  function promptHistory(id) {
+    const prompt = loadPrompts().find(item => item.id === id);
+    if (!prompt) return promptLibrary('Prompt no longer exists.');
+    const box = document.createElement('div');
+    box.innerHTML = '<p class="acus-muted">Compare earlier wording with the current prompt. Restoring also saves the current version. Up to 50 previous versions are kept.</p><label class="acus-field">Saved version<select class="acus-input"></select></label><div class="acus-compare"><label class="acus-field">Current prompt<textarea class="acus-input acus-current" readonly></textarea></label><label class="acus-field">Earlier prompt<textarea class="acus-input acus-earlier" readonly></textarea></label></div><p class="acus-muted acus-history-detail"></p><button class="acus-primary">Restore this version</button>';
+    const select = box.querySelector('select');
+    [...prompt.history].reverse().forEach((version, offset) => { const option = document.createElement('option'); option.value = String(prompt.history.length - offset - 1); option.textContent = `${new Date(version.at).toLocaleString()} · ${version.name}`; select.append(option); });
+    box.querySelector('.acus-current').value = prompt.text;
+    const render = () => {
+      const version = prompt.history[Number(select.value)];
+      box.querySelector('.acus-earlier').value = version?.text || '';
+      box.querySelector('.acus-history-detail').textContent = version ? `Earlier name: ${version.name}. Template defaults are restored too; folders and favorites stay unchanged.` : 'No earlier versions.';
+      box.querySelector('button').disabled = !version;
+    };
+    select.onchange = render;
+    box.querySelector('button').onclick = () => {
+      const previous = prompt.history[Number(select.value)];
+      if (!previous || !confirm('Restore this prompt version? The current version will remain in history.')) return;
+      const next = loadPrompts(), index = next.findIndex(item => item.id === id);
+      if (index < 0) return promptLibrary('Prompt no longer exists.');
+      next[index] = revisePrompt(next[index], { ...next[index], ...promptSnapshot(previous) });
+      savePrompts(next); promptLibrary('Prompt version restored.');
+    };
+    render(); modal('Prompt history', box, promptLibrary, 'Back to Prompt Library');
+  }
+
+  function formatText(text, mode = 'cleanup') {
+    const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+    let fence = null;
+    const output = [];
+    for (let line of lines) {
+      const marker = line.match(/^\s*(`{3,}|~{3,})/);
+      if (marker && (!fence || marker[1][0] === fence[0] && marker[1].length >= fence.length)) {
+        fence = fence ? null : marker[1];
+        if (mode !== 'plain') output.push(line);
+        continue;
+      }
+      if (!fence) {
+        line = line.replace(/[ \t]+$/g, '');
+        if (mode === 'plain') line = line.replace(/^\s{0,3}#{1,6}\s+/, '').replace(/^\s*>\s?/, '')
+          .replace(/!?\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)').replace(/(`+)(.*?)\1/g, '$2')
+          .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, (_, a, b) => a || b).replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, '$1');
+        if (!line && output.at(-1) === '' && output.at(-2) === '') continue;
+      }
+      output.push(line);
+    }
+    while (output[0] === '') output.shift();
+    while (output.at(-1) === '') output.pop();
+    return output.join('\n');
+  }
+
+  function coachPrompt(text, options = {}) {
+    const original = String(text).trim();
+    const tips = [];
+    if (!original) return { tips: ['Enter your request first.'], rewrite: '' };
+    if (original.split(/\s+/).length < 12 && !options.context) tips.push('Add the goal or a little background so the request has a clear scope.');
+    if (/\b(better|good|nice|fix it|this thing|that thing)\b/i.test(original)) tips.push('Explain what “better” or “fixed” would look like, using a concrete example.');
+    if (!options.format && !/\b(bullets?|table|steps?|json|markdown|paragraphs?|examples?|summary)\b/i.test(original)) tips.push('Choose an answer format if you have a preference.');
+    if (!options.context && !/\b(because|for|context|background|audience|goal)\b/i.test(original)) tips.push('Include relevant context or who the answer is for.');
+    let request = original.replace(/^i (?:was wondering|wonder) if you (?:could|can)\s+/i, 'Please ').replace(/^can you (?:please )?/i, 'Please ');
+    if (/^[a-z]/.test(request)) request = request[0].toUpperCase() + request.slice(1);
+    const parts = [request];
+    if (options.context?.trim()) parts.push(`Context:\n${options.context.trim()}`);
+    if (options.constraints?.trim()) parts.push(`Requirements:\n${options.constraints.trim()}`);
+    if (options.format) parts.push(`Please respond with ${options.format}.`);
+    if (options.clarify) parts.push('If an essential detail is missing, ask a brief clarifying question first.');
+    return { tips: tips.length ? tips : ['The request has a useful starting structure. Check the details and intended meaning before using it.'], rewrite: parts.join('\n\n') };
+  }
+
+  function currentDraft() {
+    const controls = [...document.querySelectorAll('#prompt-textarea,textarea,[contenteditable="true"][role="textbox"],[contenteditable="true"].ProseMirror')].filter(node => visible(node) && !utilityContains(node));
+    const input = controls.find(node => node.id === 'prompt-textarea') || controls[0];
+    return input ? (input.value ?? input.innerText ?? '').trim() : '';
+  }
+
+  function promptCoach(initial = '', onUse = null, onBack = openMenu) {
+    const box = document.createElement('div');
+    box.innerHTML = `<p class="acus-muted">A local writing checklist, not a model score. Add the details that matter, then review the suggested wording. Nothing is sent automatically.</p>
+      <button class="acus-draft">Use current chat draft</button><label class="acus-field">Your request<textarea class="acus-input acus-request"></textarea></label>
+      <details><summary>Optional details</summary><label class="acus-field">Context or audience<textarea class="acus-input acus-context"></textarea></label><label class="acus-field">Requirements or limits<textarea class="acus-input acus-constraints"></textarea></label><label class="acus-field">Answer format<select class="acus-input acus-format"><option value="">Keep unspecified</option><option value="concise bullet points">Concise bullets</option><option value="numbered steps">Steps</option><option value="an explanation with examples">Explanation with examples</option><option value="a comparison table">Comparison table</option></select></label><label class="acus-check"><input type="checkbox" class="acus-clarify"> Ask for clarification when essential details are missing</label></details>
+      <button class="acus-primary acus-review">Review wording</button><ul class="acus-tips"></ul><label class="acus-field">Editable suggestion<textarea class="acus-input acus-rewrite"></textarea></label><div class="acus-prompt-actions"><button class="acus-copy">Copy suggestion</button><button class="acus-use acus-primary">Use in prompt editor</button></div><p class="acus-library-status" role="status"></p>`;
+    const request = box.querySelector('.acus-request'), rewrite = box.querySelector('.acus-rewrite'), status = box.querySelector('[role="status"]');
+    request.value = typeof initial === 'string' ? initial : '';
+    const review = () => {
+      const result = coachPrompt(request.value, { context: box.querySelector('.acus-context').value, constraints: box.querySelector('.acus-constraints').value, format: box.querySelector('.acus-format').value, clarify: box.querySelector('.acus-clarify').checked });
+      box.querySelector('.acus-tips').replaceChildren();
+      result.tips.forEach(tip => { const li = document.createElement('li'); li.textContent = tip; box.querySelector('.acus-tips').append(li); });
+      rewrite.value = result.rewrite;
+      box.querySelector('.acus-copy').disabled = !result.rewrite;
+      box.querySelector('.acus-use').disabled = !result.rewrite;
+    };
+    box.querySelector('.acus-draft').onclick = () => { const draft = currentDraft(); if (draft) { request.value = draft; review(); status.textContent = 'Draft copied locally for review. Your chat draft is unchanged.'; } else status.textContent = 'No supported chat draft was found. Paste your request above.'; };
+    box.querySelector('.acus-review').onclick = review;
+    rewrite.oninput = () => { box.querySelector('.acus-copy').disabled = !rewrite.value.trim(); box.querySelector('.acus-use').disabled = !rewrite.value.trim(); };
+    box.querySelector('.acus-copy').onclick = () => copyText(rewrite.value, message => { status.textContent = message; });
+    box.querySelector('.acus-use').hidden = !onUse;
+    box.querySelector('.acus-use').onclick = () => onUse?.(rewrite.value);
+    review(); modal('Prompt Coach', box, onBack, 'Back to previous screen'); request.focus();
+  }
+
+  function textTools() {
+    const box = document.createElement('div');
+    box.innerHTML = '<p class="acus-muted">Format pasted text locally. Code inside fenced blocks keeps its spacing.</p><label class="acus-field">Original text<textarea class="acus-input acus-original"></textarea></label><label class="acus-field">Formatting<select class="acus-input"><option value="cleanup">Clean spacing and blank lines</option><option value="plain">Markdown to plain text</option></select></label><label class="acus-field">Preview<textarea class="acus-input acus-result" readonly></textarea></label><p class="acus-muted acus-count"></p><button class="acus-primary">Copy result</button><p role="status"></p>';
+    const original = box.querySelector('.acus-original'), result = box.querySelector('.acus-result'), mode = box.querySelector('select');
+    const render = () => { result.value = formatText(original.value, mode.value); box.querySelector('.acus-count').textContent = `${result.value.trim() ? result.value.trim().split(/\s+/).length : 0} space separated words · ${[...result.value].length} characters`; box.querySelector('button').disabled = !result.value; };
+    original.oninput = render; mode.onchange = render;
+    box.querySelector('button').onclick = () => copyText(result.value, message => { box.querySelector('[role="status"]').textContent = message; });
+    render(); modal('Text tools', box); original.focus();
+  }
+
+  function bookmarkedChats() {
+    const box = document.createElement('div');
+    const intro = document.createElement('p'); intro.className = 'acus-muted'; intro.textContent = 'Bookmarks help you find conversations. Locks control cleanup separately.';
+    const add = button('Bookmark current chat');
+    const status = document.createElement('p'); status.setAttribute('role', 'status');
+    const list = document.createElement('div'); box.append(intro, add, status, list);
+    const render = () => {
+      list.replaceChildren();
+      for (const bookmark of loadBookmarks()) {
+        const row = document.createElement('div'); row.className = 'acus-prompt-actions';
+        const link = document.createElement('a'); link.className = 'acus-row'; link.href = bookmark.href; link.textContent = bookmark.title;
+        const remove = button('Remove bookmark'); remove.onclick = () => { toggleBookmark(bookmark); render(); };
+        row.append(link, remove); list.append(row);
+      }
+      if (!list.children.length) list.textContent = 'No bookmarks yet. Bookmark the current chat or use the star in Chat Cleaner.';
+      add.disabled = !validChatHref(location.pathname);
+    };
+    add.onclick = () => {
+      const chat = cachedHistory?.get(location.pathname) || getChatLinks().find(item => item.href === location.pathname) || { href: location.pathname, title: document.title || 'Current conversation' };
+      if (!loadBookmarks().some(item => item.href === chat.href)) toggleBookmark(chat);
+      status.textContent = 'Chat bookmarked.'; render();
+    };
+    render(); modal('Chat bookmarks', box);
   }
 
   function detectDarkMode() {
@@ -1152,11 +1344,14 @@
       box.append(field);
     }
     const save = button('Save settings');
+    const shortcutLabel = document.createElement('label'); shortcutLabel.className = 'acus-check';
+    const shortcut = document.createElement('input'); shortcut.type = 'checkbox'; shortcut.checked = settings.shortcutEnabled;
+    shortcutLabel.append(shortcut, document.createTextNode('Enable Alt + Shift + K for shortcuts')); box.append(shortcutLabel);
     save.className = 'acus-primary';
     const status = document.createElement('p');
     status.setAttribute('role', 'status');
     save.onclick = () => {
-      const next = normalizeSettings(Object.fromEntries(Object.entries(choices).map(([key, select]) => [key, select.value])));
+      const next = normalizeSettings({ ...Object.fromEntries(Object.entries(choices).map(([key, select]) => [key, select.value])), shortcutEnabled: shortcut.checked });
       GM_setValue(SETTINGS_KEY, JSON.stringify(next));
       GM_setValue(CHAT_SORT_KEY, next.sort);
       applyAppearance(box.closest('.acus-modal'));
@@ -1318,7 +1513,7 @@
     return result;
   }
 
-  function makeOverlay(chats, selectedHrefs = new Set()) {
+  function makeOverlay(chats, selectedHrefs = new Set(), viewState = {}) {
     chats = numberChats(chats);
     document.getElementById('vanick-cleaner-overlay')?.remove();
 
@@ -1557,6 +1752,7 @@
     const viewControls = document.createElement('div');
     viewControls.className = 'vc-toolbar';
     const titleSearch = document.createElement('input');
+    titleSearch.value = viewState.query || '';
     titleSearch.type = 'search';
     titleSearch.className = 'vc-input';
     titleSearch.placeholder = 'Search loaded chat titles';
@@ -1570,7 +1766,7 @@
       option.textContent = label;
       viewFilter.append(option);
     }
-    viewFilter.value = loadSettings().cleanerView;
+    viewFilter.value = viewState.view || loadSettings().cleanerView;
     const viewCount = document.createElement('span');
     viewCount.className = 'vc-subtitle';
     viewCount.setAttribute('aria-live', 'polite');
@@ -1607,6 +1803,7 @@
       updateBackLabel();
       refreshView();
       const selected = rows.filter(item => item.checkbox.checked).length;
+      exportSelected.disabled = selected === 0;
       coverage.textContent = historyCoverage(rows.filter(item => !item.removed).length);
       summary.textContent = filterMode ? `${activeFilters.suggested.length} suggested filters · ${activeFilters.protected.length} protected filters` : `${rows.filter(item => !item.removed).length} loaded · ${selected} selected`;
       for (const item of rows) item.row.classList.toggle('vc-selected', item.checkbox.checked);
@@ -1671,7 +1868,12 @@
         pill.className = `vc-pill ${chat.locked || chat.protectedMatches.length ? 'vc-pill-protected' : chat.likelyPersonal ? 'vc-pill-personal' : 'vc-pill-review'}`;
         refreshSelection();
       };
-      row.append(lock);
+      const rowActions = document.createElement('div'); rowActions.className = 'vc-row-actions';
+      const bookmark = button(loadBookmarks().some(item => item.href === chat.href) ? '★' : '☆');
+      bookmark.setAttribute('aria-label', `Bookmark ${chat.title}`);
+      bookmark.setAttribute('aria-pressed', String(loadBookmarks().some(item => item.href === chat.href)));
+      bookmark.onclick = event => { event.preventDefault(); const saved = toggleBookmark(chat); bookmark.textContent = saved ? '★' : '☆'; bookmark.setAttribute('aria-pressed', String(saved)); };
+      rowActions.append(lock, bookmark); row.append(rowActions);
       list.appendChild(row);
       rows.push({ chat, checkbox, row });
     }
@@ -1956,6 +2158,8 @@
       input.disabled = !chats.length;
     }
     fromNumber.placeholder = 'From chat #';
+    fromNumber.value = viewState.from || '';
+    toNumber.value = viewState.to || '';
     fromNumber.setAttribute('aria-label', 'From chat number');
     toNumber.placeholder = 'To chat #';
     toNumber.setAttribute('aria-label', 'To chat number');
@@ -2011,6 +2215,16 @@
     historyActions.append(historyLabel, manageFilters, refreshHistory);
     toolbarActions.append(selectionActions, historyActions);
     toolbar.append(summary, toolbarActions);
+    const exportSelected = button('Export selected', 'secondary');
+    exportSelected.onclick = () => {
+      const chosen = rows.filter(item => item.checkbox.checked && !item.removed).map(item => item.chat);
+      const selected = new Set(chosen.map(chat => chat.href));
+      const state = { query: titleSearch.value, view: viewFilter.value, from: fromNumber.value, to: toNumber.value, rangeOpen: rangeSection.open, action: cleanupAction.value };
+      const remaining = rows.filter(item => !item.removed).sort((a, b) => b.chat.chatNumber - a.chat.chatNumber).map(item => item.chat);
+      overlay.remove();
+      conversationExports(chosen, () => makeOverlay(remaining.map(classify), selected, state));
+    };
+    selectionActions.append(exportSelected);
     const sortBar = document.createElement('div');
     sortBar.className = 'vc-field';
     const sortLabel = document.createElement('label');
@@ -2036,6 +2250,30 @@
     };
     sortBar.append(sortLabel, sortSelect);
     viewControls.append(sortBar);
+    const savedViews = document.createElement('details'); savedViews.className = 'vc-range';
+    const savedTitle = document.createElement('summary'); savedTitle.textContent = 'Saved cleaner views';
+    const savedBody = document.createElement('div'); savedBody.className = 'vc-toolbar';
+    const viewName = document.createElement('input'); viewName.className = 'vc-input'; viewName.placeholder = 'Name this view'; viewName.setAttribute('aria-label', 'View name');
+    const savedSelect = document.createElement('select'); savedSelect.className = 'vc-input'; savedSelect.setAttribute('aria-label', 'Saved view');
+    const saveView = button('Save current view'), deleteView = button('Delete saved view');
+    const viewStatus = document.createElement('span'); viewStatus.className = 'vc-subtitle'; viewStatus.setAttribute('role', 'status');
+    const renderViews = () => { savedSelect.replaceChildren(); const blank = document.createElement('option'); blank.value = ''; blank.textContent = 'Choose a saved view'; savedSelect.append(blank); loadViews().forEach(view => { const option = document.createElement('option'); option.value = view.name; option.textContent = view.name; savedSelect.append(option); }); deleteView.disabled = true; };
+    saveView.onclick = () => {
+      const value = normalizeView({ name: viewName.value, query: titleSearch.value, view: viewFilter.value, sort: sortOrder });
+      if (!value.name) { viewStatus.textContent = 'Enter a view name.'; return; }
+      GM_setValue(clientKey(VIEW_KEY), JSON.stringify([...loadViews().filter(item => item.name !== value.name), value])); renderViews(); viewStatus.textContent = 'View saved. Chat selections and number ranges are not saved.';
+    };
+    savedSelect.onchange = () => {
+      const value = loadViews().find(item => item.name === savedSelect.value); deleteView.disabled = !value;
+      if (!value) return;
+      titleSearch.value = value.query; viewFilter.value = value.view; sortSelect.value = value.sort; sortSelect.onchange(); refreshSelection();
+      viewName.value = value.name; viewStatus.textContent = 'View loaded. Your selection is unchanged.';
+    };
+    deleteView.onclick = () => {
+      if (!savedSelect.value || !confirm('Delete this saved view? Chats are not affected.')) return;
+      GM_setValue(clientKey(VIEW_KEY), JSON.stringify(loadViews().filter(item => item.name !== savedSelect.value))); renderViews(); viewStatus.textContent = 'Saved view deleted.';
+    };
+    renderViews(); savedBody.append(viewName, saveView, savedSelect, deleteView, viewStatus); savedViews.append(savedTitle, savedBody);
     const coverage = document.createElement('div');
     coverage.className = 'vc-coverage vc-subtitle';
     coverage.style.cssText = 'padding:8px 20px;flex-shrink:0';
@@ -2043,11 +2281,12 @@
     panel.append(coverage);
     const rangeSection = document.createElement('details');
     rangeSection.className = 'vc-range';
+    rangeSection.open = !!viewState.rangeOpen;
     const rangeLabel = document.createElement('summary');
     rangeLabel.textContent = 'Select a number range';
     rangeSection.append(rangeLabel, numberControls);
     panel.append(rangeSection);
-    panel.append(toolbar, viewControls, listWrap, filterManager, selectionReview);
+    panel.append(toolbar, viewControls, savedViews, listWrap, filterManager, selectionReview);
 
     footer = document.createElement('div');
     footer.className = 'vc-footer';
@@ -2069,6 +2308,7 @@
       const option = document.createElement('option'); option.value = value; option.textContent = text; cleanupAction.append(option);
     }
     cleanupAction.onchange = refreshSelection;
+    if (viewState.action === 'delete') cleanupAction.value = 'delete';
     cleanupField.append(cleanupAction);
 
     const close = button('Cancel', 'secondary');
@@ -2192,6 +2432,7 @@
       backIcon.setAttribute('aria-label', filterMode || selectionMode ? 'Back to chats' : 'Back to AI Tools');
     }
     updateBackLabel();
+    refreshNumberRange();
     refreshSelection();
     backIcon.focus();
   }
@@ -2403,11 +2644,285 @@
     search.focus();
   }
 
+  function domMessageText(node, plain = false) {
+    if (node.nodeType === 3) return plain ? node.textContent : node.textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/([\\`*_[\]])/g, '\\$1');
+    if (node.nodeType !== 1 || ['BUTTON', 'SVG', 'SCRIPT', 'STYLE', 'NOSCRIPT'].includes(node.tagName) || node.getAttribute('aria-hidden') === 'true') return '';
+    const children = () => [...node.childNodes].map(child => domMessageText(child, plain)).join('');
+    const tag = node.tagName;
+    if (tag === 'BR') return '\n';
+    if (tag === 'PRE') {
+      const code = node.querySelector('code') || node;
+      const text = code.textContent;
+      if (plain) return `\n${text}\n`;
+      const runs = [...text.matchAll(/`+/g)].map(match => match[0].length);
+      const fence = '`'.repeat(Math.max(3, ...runs.map(length => length + 1)));
+      const language = (code.className || '').match(/(?:language|lang)-([a-zA-Z0-9_+-]+)/)?.[1] || '';
+      return `\n\n${fence}${language}\n${text}\n${fence}\n\n`;
+    }
+    if (tag === 'CODE') {
+      if (plain) return node.textContent;
+      const fence = '`'.repeat(Math.max(1, ...[...node.textContent.matchAll(/`+/g)].map(match => match[0].length + 1)));
+      return `${fence} ${node.textContent} ${fence}`;
+    }
+    if (tag === 'IMG') return `[Image: ${node.getAttribute('alt') || 'attachment'}]`;
+    if (tag === 'A') {
+      const label = children(), href = node.getAttribute('href') || '';
+      if (!/^https?:\/\//i.test(href)) return label;
+      return plain ? `${label} (${href})` : `[${label}](${href.replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29')})`;
+    }
+    if (tag === 'UL' || tag === 'OL') return '\n' + [...node.children].filter(child => child.tagName === 'LI').map((child, index) => `${tag === 'OL' ? `${index + 1}.` : '-'} ${domMessageText(child, plain).trim()}\n`).join('') + '\n';
+    if (tag === 'TABLE') {
+      const rows = [...node.querySelectorAll('tr')].map(row => [...row.children].map(cell => domMessageText(cell, plain).trim().replace(/\|/g, '\\|')));
+      return '\n\n' + rows.map((cells, index) => '| ' + cells.join(' | ') + ' |\n' + (!plain && index === 0 ? '| ' + cells.map(() => '---').join(' | ') + ' |\n' : '')).join('') + '\n';
+    }
+    const text = children();
+    if (/^H[1-6]$/.test(tag)) return `\n\n${plain ? '' : '#'.repeat(Number(tag[1])) + ' '}${text}\n\n`;
+    if (tag === 'STRONG' || tag === 'B') return plain ? text : `**${text}**`;
+    if (tag === 'EM' || tag === 'I') return plain ? text : `*${text}*`;
+    if (tag === 'BLOCKQUOTE') return '\n\n' + (plain ? text : text.trim().split('\n').map(line => '> ' + line).join('\n')) + '\n\n';
+    return ['P', 'DIV', 'ARTICLE', 'SECTION', 'LI'].includes(tag) ? `\n${text}\n` : text;
+  }
+
+  function conversationNodes() {
+    const root = document.querySelector('main,[role="main"]');
+    if (!root) return [];
+    let nodes = [...root.querySelectorAll('[data-message-author-role], [data-testid="user-message"], [data-testid="assistant-message"]')];
+    if (!nodes.length && platform() === 'Claude') nodes = [...root.querySelectorAll('[data-is-streaming],.font-claude-message,.font-claude-response')];
+    nodes = nodes.filter(node => !utilityContains(node) && visible(node));
+    return nodes.filter(node => !nodes.some(other => other !== node && other.contains(node)));
+  }
+
+  function messageRole(node) {
+    const role = node.getAttribute('data-message-author-role');
+    if (['user', 'assistant', 'system', 'tool'].includes(role)) return role;
+    if (node.getAttribute('data-testid') === 'user-message') return 'user';
+    if (node.getAttribute('data-testid') === 'assistant-message' || node.hasAttribute('data-is-streaming') || node.classList.contains('font-claude-response')) return 'assistant';
+    return 'unknown';
+  }
+
+  function conversationSignature() {
+    return promptId(conversationNodes().map(node => `${node.getAttribute('data-message-id') || node.id}|${messageRole(node)}|${node.textContent}`).join('\n'));
+  }
+
+  function captureConversation(chat) {
+    const nodes = conversationNodes();
+    if (!nodes.length) throw new Error('No supported loaded messages were found. Open the conversation and load its messages first.');
+    const messages = nodes.map(node => {
+      const clone = node.cloneNode(true);
+      clone.querySelectorAll('button,svg,script,style,[aria-hidden="true"]').forEach(element => element.remove());
+      const content = clone;
+      return { role: messageRole(node), text: domMessageText(content, true).replace(/^\n+|\n+$/g, ''), markdown: domMessageText(content).replace(/^\n+|\n+$/g, '') };
+    }).filter(message => message.text.trim());
+    if (!messages.length) throw new Error('Loaded messages contained no exportable text.');
+    return { title: chat.title, href: chat.href, source: location.origin + chat.href, client: platform(), capturedAt: new Date().toISOString(), complete: false, coverage: 'Loaded messages only. Earlier unloaded messages, alternate branches, and attachment files are not included.', messages };
+  }
+
+  async function waitForConversation(chat, before, sameRoute, status) {
+    let previous = '', stable = 0;
+    const deadline = Date.now() + 90000;
+    while (Date.now() < deadline) {
+      if (exportStopped) throw new Error('Export paused.');
+      const matches = location.pathname.replace(/\/$/, '') === chat.href.replace(/\/$/, '');
+      const nodes = matches ? conversationNodes() : [];
+      const signature = nodes.length ? conversationSignature() : '';
+      const streaming = [...document.querySelectorAll('[data-is-streaming="true"],button[data-testid="stop-button"]')].some(node => !utilityContains(node) && visible(node));
+      if (signature && (sameRoute || signature !== before) && !streaming) stable = signature === previous ? stable + 1 : 0;
+      else stable = 0;
+      if (stable >= 5) return;
+      previous = signature;
+      status.textContent = `Waiting for loaded messages: ${chat.title}. Slower connections can take up to 90 seconds.`;
+      await sleep(400);
+    }
+    throw new Error('Messages did not settle or could not be distinguished from the previous conversation. Try opening this chat manually and exporting it again.');
+  }
+
+  function snapshotText(snapshot, format) {
+    if (format === 'json') return JSON.stringify(snapshot, null, 2);
+    const title = snapshot.title.replace(/[\r\n]+/g, ' ');
+    const header = `${format === 'md' ? '# ' : ''}${title}\n\nSource: ${snapshot.source}\nCaptured: ${snapshot.capturedAt}\nCoverage: ${snapshot.coverage}\n\n`;
+    return header + snapshot.messages.map(message => `${format === 'md' ? '## ' : ''}${message.role[0].toUpperCase() + message.role.slice(1)}\n\n${format === 'md' ? message.markdown : message.text}\n`).join('\n');
+  }
+
+  function exportFilename(title, index, extension) {
+    let base = [...String(title).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')].slice(0, 80).join('').replace(/[ .]+$/g, '').trim() || 'Conversation';
+    if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(base)) base = 'Chat_' + base;
+    return `${String(index + 1).padStart(4, '0')}_${base}.${extension}`;
+  }
+
+  function crc32(bytes) {
+    if (!crc32.table) crc32.table = Array.from({ length: 256 }, (_, value) => { let item = value; for (let bit = 0; bit < 8; bit++) item = (item >>> 1) ^ ((item & 1) ? 0xedb88320 : 0); return item >>> 0; });
+    let crc = 0xffffffff;
+    for (const byte of bytes) crc = (crc >>> 8) ^ crc32.table[(crc ^ byte) & 0xff];
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function zipFiles(files) {
+    if (files.length > 65535) throw new Error('Too many files for this ZIP format.');
+    const encoder = new TextEncoder(), chunks = [], directory = [];
+    let offset = 0, directorySize = 0;
+    for (const file of files) {
+      const name = encoder.encode(file.name), data = typeof file.text === 'string' ? encoder.encode(file.text) : file.bytes;
+      if (name.length > 65535 || !data || data.length > 0xffffffff) throw new Error('A ZIP entry is too large.');
+      const crc = crc32(data), header = new Uint8Array(30), view = new DataView(header.buffer);
+      view.setUint32(0, 0x04034b50, true); view.setUint16(4, 20, true); view.setUint16(6, 0x800, true); view.setUint16(12, 33, true);
+      view.setUint32(14, crc, true); view.setUint32(18, data.length, true); view.setUint32(22, data.length, true); view.setUint16(26, name.length, true);
+      chunks.push(header, name, data);
+      const central = new Uint8Array(46), cv = new DataView(central.buffer);
+      cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(8, 0x800, true); cv.setUint16(14, 33, true);
+      cv.setUint32(16, crc, true); cv.setUint32(20, data.length, true); cv.setUint32(24, data.length, true); cv.setUint16(28, name.length, true); cv.setUint32(42, offset, true);
+      directory.push(central, name); directorySize += central.length + name.length; offset += header.length + name.length + data.length;
+      if (offset + directorySize > 0xffffffff) throw new Error('This ZIP would exceed the supported archive size. Export fewer conversations.');
+    }
+    const end = new Uint8Array(22), ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true); ev.setUint32(12, directorySize, true); ev.setUint32(16, offset, true);
+    const result = new Uint8Array(offset + directorySize + end.length);
+    let position = 0; for (const chunk of [...chunks, ...directory, end]) { result.set(chunk, position); position += chunk.length; }
+    return result;
+  }
+
+  function backupFiles(job, format) {
+    const entries = job.captured.map((snapshot, index) => ({ name: exportFilename(snapshot.title, index, format), text: snapshotText(snapshot, format) }));
+    const manifest = { format: 'ai-client-utility-suite-conversations', version: 1, complete: false, coverage: 'Loaded message snapshots, not a complete account backup.', conversations: job.captured.map((snapshot, index) => ({ title: snapshot.title, source: snapshot.source, capturedAt: snapshot.capturedAt, messageCount: snapshot.messages.length, complete: false, file: entries[index].name })), failed: job.failed, pending: job.targets.slice(job.cursor) };
+    entries.push({ name: 'manifest.json', text: JSON.stringify(manifest, null, 2) });
+    entries.push({ name: 'index.md', text: '# Conversation export\n\nLoaded messages only. Check each conversation before using this export as a backup.\n\n' + manifest.conversations.map(item => `- [${item.title.replace(/[\[\]\r\n]/g, ' ')}](${encodeURIComponent(item.file)}) · ${item.messageCount} messages · incomplete coverage`).join('\n') });
+    return entries;
+  }
+
+  function downloadFile(data, name, type = 'text/plain;charset=utf-8') {
+    const url = URL.createObjectURL(new Blob([data], { type }));
+    const link = document.createElement('a'); link.href = url; link.download = name; document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function conversationExports(initial = [], onBack = openMenu) {
+    if (!Array.isArray(initial)) initial = [];
+    const stored = readStored(clientKey(EXPORT_KEY), null);
+    let job = stored?.version === 1 && Array.isArray(stored.targets) && Array.isArray(stored.captured) && Array.isArray(stored.failed) ? stored : null;
+    if (job) job.targets = job.targets.filter(chat => validChatHref(chat.href));
+    const chats = [...new Map([...(cachedHistory ? [...cachedHistory.values()] : getChatLinks()), ...initial].filter(chat => validChatHref(chat.href)).map(chat => [chat.href, chat])).values()];
+    if (validChatHref(location.pathname) && !chats.some(chat => chat.href === location.pathname)) chats.unshift({ href: location.pathname, title: document.title || 'Current conversation' });
+    const selected = new Set(initial.map(chat => chat.href));
+    if (!initial.length && validChatHref(location.pathname)) selected.add(location.pathname);
+    const box = document.createElement('div');
+    box.innerHTML = `<p class="acus-muted">Exports capture loaded message text and code. They may omit unloaded messages, alternate branches, attachments, or unsupported content. Every file is marked as incomplete coverage. Open and load older messages in the client when needed.</p><p class="acus-muted">Capture opens each selected chat. Captured text stays in a local draft until cleared or replaced. If the page reloads, reopen this tool and choose Resume draft.</p>
+      <details open class="acus-export-picker"><summary>Choose conversations</summary><label class="acus-field">Filter titles<input type="search" class="acus-input acus-filter"></label><div class="acus-prompt-actions"><button class="acus-select">Select shown</button><button class="acus-clear">Deselect all</button></div><div class="acus-export-list"></div></details>
+      <div class="acus-prompt-actions"><button class="acus-start acus-primary">Capture selected</button><button class="acus-resume">Resume draft</button><button class="acus-retry">Retry failed captures</button><button class="acus-stop" hidden>Pause export</button><button class="acus-discard">Clear export draft</button></div><p class="acus-status" role="status"></p>
+      <section class="acus-export-review" hidden><h3>Review captured messages</h3><label class="acus-field">Conversation<select class="acus-input acus-snapshot"></select></label><label class="acus-field">File format<select class="acus-input acus-format"><option value="md">Markdown</option><option value="txt">Plain text</option><option value="json">JSON</option></select></label><label class="acus-field">Loaded messages preview<textarea class="acus-input acus-preview" readonly></textarea></label><div class="acus-prompt-actions"><button class="acus-download acus-primary">Download this conversation</button><button class="acus-zip">Download ZIP with index</button></div></section>`;
+    const status = box.querySelector('[role="status"]'), filter = box.querySelector('.acus-filter'), list = box.querySelector('.acus-export-list'), snapshotSelect = box.querySelector('.acus-snapshot'), format = box.querySelector('.acus-format');
+    const save = () => GM_setValue(clientKey(EXPORT_KEY), job ? JSON.stringify(job) : '');
+    const preview = () => { const snapshot = job?.captured[Number(snapshotSelect.value)]; box.querySelector('.acus-preview').value = snapshot ? snapshotText(snapshot, format.value) : ''; };
+    const render = () => {
+      list.replaceChildren();
+      for (const chat of chats.filter(item => item.title.toLowerCase().includes(filter.value.trim().toLowerCase()))) {
+        const row = document.createElement('label'); row.className = 'acus-archive-row';
+        const check = document.createElement('input'); check.type = 'checkbox'; check.checked = selected.has(chat.href); check.onchange = () => { if (check.checked) selected.add(chat.href); else selected.delete(chat.href); render(); };
+        const title = document.createElement('span'); title.textContent = chat.title; row.append(check, title); list.append(row);
+      }
+      box.querySelector('.acus-start').disabled = !selected.size; box.querySelector('.acus-start').textContent = `Capture selected (${selected.size})`;
+      box.querySelector('.acus-resume').hidden = !job || job.cursor >= job.targets.length;
+      box.querySelector('.acus-retry').hidden = !job?.failed.length;
+      box.querySelector('.acus-discard').hidden = !job;
+      box.querySelector('.acus-export-review').hidden = !job?.captured.length;
+      snapshotSelect.replaceChildren();
+      job?.captured.forEach((snapshot, index) => { const option = document.createElement('option'); option.value = String(index); option.textContent = `${snapshot.title} · ${snapshot.messages.length} loaded messages`; snapshotSelect.append(option); });
+      preview();
+      if (job) status.textContent = `${job.captured.length} captured · ${job.failed.length} failed · ${Math.max(0, job.targets.length - job.cursor)} pending. Review coverage before downloading.`;
+    };
+    const run = async () => {
+      if (!job || exportRunning) return;
+      exportRunning = true; exportStopped = false; box.querySelector('.acus-stop').hidden = false;
+      const modalRoot = box.closest('.acus-modal');
+      for (const control of modalRoot.querySelectorAll('button,input,select,textarea')) if (!control.classList.contains('acus-stop')) control.disabled = true;
+      try {
+        for (; job.cursor < job.targets.length;) {
+          if (exportStopped || !box.isConnected) break;
+          const chat = job.targets[job.cursor], before = conversationSignature(), sameRoute = location.pathname.replace(/\/$/, '') === chat.href.replace(/\/$/, '');
+          save();
+          try {
+            status.textContent = `Opening ${job.cursor + 1} of ${job.targets.length}: ${chat.title}`;
+            if (!sameRoute) { const link = await locateChatLink(chat.href); if (!link) throw new Error('Chat is not available in the sidebar. Open it manually before retrying.'); activate(link); }
+            await waitForConversation(chat, before, sameRoute, status);
+            const snapshot = captureConversation(chat);
+            job.captured = [...job.captured.filter(item => item.href !== chat.href), snapshot];
+          } catch (error) {
+            if (exportStopped || !box.isConnected) break;
+            job.failed.push({ chat, message: error instanceof Error ? error.message : String(error) });
+          }
+          job.cursor++; save();
+        }
+      } finally {
+        exportRunning = false; box.querySelector('.acus-stop').hidden = true;
+        for (const control of modalRoot.querySelectorAll('button,input,select,textarea')) control.disabled = false;
+        save(); render();
+        if (exportStopped) status.textContent = 'Export paused. Captured messages are kept in the local draft; resume when ready.';
+        if (job.failed.length) {
+          const failures = document.createElement('p'); failures.className = 'acus-muted'; failures.textContent = job.failed.map(failure => `${failure.chat.title}: ${failure.message}`).join('\n'); status.append(failures);
+        }
+      }
+    };
+    filter.oninput = render;
+    box.querySelector('.acus-select').onclick = () => { chats.filter(chat => chat.title.toLowerCase().includes(filter.value.trim().toLowerCase())).forEach(chat => selected.add(chat.href)); render(); };
+    box.querySelector('.acus-clear').onclick = () => { selected.clear(); render(); };
+    box.querySelector('.acus-start').onclick = () => {
+      if (job?.captured.length && !confirm('Replace the local export draft with a new capture batch? Download the current draft first if you want to keep it.')) return;
+      job = { version: 1, targets: chats.filter(chat => selected.has(chat.href)).map(chat => ({ href: chat.href, title: chat.title })), cursor: 0, captured: [], failed: [] }; save(); run();
+    };
+    box.querySelector('.acus-resume').onclick = run;
+    box.querySelector('.acus-retry').onclick = () => { job.targets = job.failed.map(failure => failure.chat); job.failed = []; job.cursor = 0; save(); run(); };
+    box.querySelector('.acus-stop').onclick = () => { exportStopped = true; status.textContent = 'Pausing export…'; };
+    box.querySelector('.acus-discard').onclick = () => { if (!confirm('Clear the local export draft? Original conversations are not changed.')) return; job = null; save(); render(); status.textContent = 'Export draft cleared.'; };
+    snapshotSelect.onchange = preview; format.onchange = preview;
+    box.querySelector('.acus-download').onclick = () => { const snapshot = job.captured[Number(snapshotSelect.value)]; downloadFile(snapshotText(snapshot, format.value), exportFilename(snapshot.title, Number(snapshotSelect.value), format.value), format.value === 'json' ? 'application/json' : 'text/plain;charset=utf-8'); status.textContent = 'Loaded message snapshot downloaded.'; };
+    box.querySelector('.acus-zip').onclick = () => { try { downloadFile(zipFiles(backupFiles(job, format.value)), 'conversation_export.zip', 'application/zip'); status.textContent = 'ZIP downloaded with coverage information and an index.'; } catch (error) { status.textContent = error.message; } };
+    render(); modal('Conversation export', box, onBack, 'Back to previous screen');
+  }
+
+  function toolCatalog() {
+    return [
+      { group: 'Chats', name: '🔎 Search Chats', description: 'Find conversations by title', run: searchChats },
+      { group: 'Chats', name: '🧹 Chat Cleaner', description: 'Search, bookmark, lock, export, and clean up', run: () => chatCleaner(false) },
+      { group: 'Chats', name: '📦 Bulk Archive', description: 'Archive selected sidebar conversations', run: bulkArchive },
+      { group: 'Chats', name: '★ Chat bookmarks', description: 'Quick access to important conversations', run: bookmarkedChats },
+      { group: 'Chats', name: '⇩ Conversation export', description: 'Preview loaded messages and download files or a ZIP', run: conversationExports },
+      { group: 'Writing', name: '📚 Prompt Library', description: 'Templates, favorites, folders, and version history', run: () => promptLibrary() },
+      { group: 'Writing', name: '✎ Prompt Coach', description: 'Review your request and refine its wording locally', run: () => promptCoach() },
+      { group: 'Writing', name: '↔ Text tools', description: 'Clean spacing, convert Markdown, and count words', run: textTools },
+      { group: 'Preferences', name: '⚙ Settings', description: 'Appearance, cleaner defaults, and shortcuts', run: settingsScreen },
+      { group: 'Preferences', name: '⌨ Shortcuts', description: 'Find tools and prompts with Alt + Shift + K', run: shortcutPalette }
+    ];
+  }
+
+  function shortcutPalette() {
+    if (exportRunning || document.getElementById('vanick-cleaner-overlay')?.dataset.running === 'true') return;
+    document.getElementById('vanick-cleaner-overlay')?.remove();
+    const box = document.createElement('div');
+    box.innerHTML = '<p class="acus-muted">Alt + Shift + K opens this menu. Search tools or saved prompts. Disable the shortcut in Settings if it conflicts with another app.</p><label class="acus-field">Find a tool or prompt<input class="acus-input" type="search"></label><div class="acus-menu"></div>';
+    const search = box.querySelector('input'); search.value = paletteQuery;
+    const render = () => {
+      paletteQuery = search.value;
+      const query = search.value.trim().toLowerCase(), list = box.querySelector('.acus-menu'); list.replaceChildren();
+      const entries = [...toolCatalog().filter(tool => !tool.name.includes('Shortcuts')).map(tool => ({ name: tool.name, description: tool.description, run: tool.run })), ...loadPrompts().map((prompt, index) => ({ name: prompt.name, description: `Saved prompt · ${prompt.folder || 'Unfiled'}`, run: () => promptTemplate(prompt, index, shortcutPalette) }))];
+      for (const entry of entries.filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query))) {
+        const action = button(entry.name); action.className = 'acus-menu-btn'; action.onclick = () => entry.run();
+        const detail = document.createElement('span'); detail.textContent = entry.description; action.append(detail); list.append(action);
+      }
+      if (!list.children.length) list.textContent = 'No tools or prompts match.';
+    };
+    search.oninput = render; render(); modal('Shortcuts', box); search.focus();
+  }
+
   function openMenu() {
-    if (document.getElementById('vanick-cleaner-overlay')?.dataset.running === 'true') return;
+    if (exportRunning || document.getElementById('vanick-cleaner-overlay')?.dataset.running === 'true') return;
     const box = document.createElement("div");
-    box.className = "acus-menu";
-    [["🔎 Search Chats", searchChats, 'Find conversations by title'], ["📦 Bulk Archive", bulkArchive, 'Move selected chats out of your sidebar'], ["🧹 Chat Cleaner", () => chatCleaner(false), 'Search, lock, archive, or delete selected chats'], ["📚 Prompt Library", promptLibrary, 'Save favorites and fill reusable prompt templates'], ['⚙ Settings', settingsScreen, 'Choose appearance, text size, and cleaner defaults']].forEach(([label, fn, description]) => {
+    box.innerHTML = '<label class="acus-field">Find a tool<input type="search" class="acus-input" placeholder="Search every tool"></label><div class="acus-prompt-actions acus-groups"></div><div class="acus-menu acus-tool-grid"></div>';
+    const search = box.querySelector('input'), groups = box.querySelector('.acus-groups'), list = box.querySelector('.acus-menu');
+    const groupButtons = [];
+    for (const group of ['Chats', 'Writing', 'Preferences']) { const tab = button(group); tab.onclick = () => { menuGroup = group; search.value = ''; render(); }; groups.append(tab); groupButtons.push({ tab, group }); }
+    function render() {
+      list.replaceChildren();
+      const query = search.value.trim().toLowerCase();
+      for (const { tab, group } of groupButtons) { tab.setAttribute('aria-pressed', String(!query && menuGroup === group)); tab.classList.toggle('acus-primary', !query && menuGroup === group); }
+      toolCatalog().filter(tool => query ? `${tool.name} ${tool.description}`.toLowerCase().includes(query) : tool.group === menuGroup).forEach(({ name: label, run: fn, description }) => {
       const b = document.createElement("button");
       b.className = "acus-menu-btn";
       const name = document.createElement('strong');
@@ -2415,9 +2930,12 @@
       const detail = document.createElement('span');
       detail.textContent = description;
       b.append(name, detail);
-      b.onclick = fn;
-      box.append(b);
-    });
+      b.onclick = () => fn();
+      list.append(b);
+      });
+      if (!list.children.length) list.textContent = 'No tools match this search.';
+    }
+    search.oninput = render; render();
     modal("AI Tools · " + platform(), box, null);
   }
 
@@ -2487,6 +3005,15 @@
       .acus-modal .acus-row{color:var(--acus-text)}
       .acus-modal .acus-row:hover,.acus-modal .acus-archive-row:hover,.acus-modal .acus-archive-row.acus-selected{background:var(--acus-surfaceHover)}
       .acus-modal[data-text-size="large"],.acus-modal[data-text-size="large"] button,.acus-modal[data-text-size="large"] .acus-input,.acus-modal[data-text-size="large"] .acus-menu-btn span{font-size:16px}
+      .acus-modal .acus-tool-grid,.acus-modal .acus-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+      .acus-modal .acus-compare textarea,.acus-modal .acus-preview{min-height:220px}
+      .acus-modal summary{cursor:pointer;padding:12px 0;min-height:44px;font-weight:650}
+      .acus-modal .acus-export-list{max-height:200px;overflow:auto;border:1px solid var(--acus-borderStrong);border-radius:10px}
+      .acus-modal .acus-tips{padding-left:24px;line-height:1.6}
+      .acus-modal .acus-groups{margin-bottom:16px}
+      #vanick-cleaner-overlay .vc-row-actions{display:flex;gap:6px;align-items:center}
+      #vanick-cleaner-overlay .vc-row-actions button{padding:8px;font-size:13px}
+      @media(max-width:640px){.acus-modal .acus-tool-grid,.acus-modal .acus-compare{grid-template-columns:1fr}#vanick-cleaner-overlay .vc-row-actions{flex-direction:column}}
     `;
     document.head.append(style);
 
@@ -2502,4 +3029,10 @@
   loadPrompts();
   inject();
   new MutationObserver(inject).observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener('keydown', event => {
+    if (event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === 'KeyK' && !event.repeat && loadSettings().shortcutEnabled) {
+      if (exportRunning || document.getElementById('vanick-cleaner-overlay')?.dataset.running === 'true') return;
+      event.preventDefault(); shortcutPalette();
+    }
+  });
 })();
