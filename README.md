@@ -45,7 +45,7 @@ Prompt edits and changes to template defaults keep up to 50 earlier versions. **
 
 **Text tools** clean spacing and blank lines, convert common Markdown formatting to plain text, and display word and character counts. Fenced code keeps its internal spacing. Preview the result before copying.
 
-In Prompt Coach, expand **Spelling corrections**, choose which field to check, and click **Check spelling**. Select individual suggestions before applying them. The local checker covers a limited set of common English typos and skips capitalized words, code in backticks, links, addresses, file paths, identifiers, and template fields. Review names and technical terms yourself. If the text changes after a check, check again before applying corrections. Browser spellcheck is also enabled on coach text areas; its languages and optional enhanced services follow browser settings.
+Prompt Coach automatically corrects common English typos after a space or punctuation, or when you leave a text field. Use **Undo last spelling correction** to restore the last change, or turn off **Automatically correct common spelling mistakes** to keep your spelling. Code in backticks, links, addresses, file paths, identifiers, capitalized words, and template fields are skipped. This is a limited local checker, not a full dictionary; review names and technical terms yourself. Browser spellcheck is also enabled and follows browser settings.
 
 ### Bookmarks, saved views, and shortcuts
 
@@ -104,7 +104,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.3.0 adds optional spelling review to Prompt Coach, alongside field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
+Version 2.3.1 adds automatic spelling corrections to Prompt Coach, alongside field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
 
 ## Privacy
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.1
+
+### Improved
+- Prompt Coach corrects common English typos automatically when words are completed or a text field loses focus, replacing the manual check and selection workflow.
+- Automatic correction is enabled by default with an off switch, cursor preservation, protected content, and an undo control that avoids replacing later edits.
+- Expanded the common typo list. Browser spellcheck remains available for words outside the local list.
+
 ## 2.3.0
 
 ### Added
