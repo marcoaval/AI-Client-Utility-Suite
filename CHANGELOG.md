@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.0
+
+### Improved
+- Bundled full English Hunspell dictionary and nspell engine for local spelling checks beyond the common typo list, with no runtime dictionary downloads or text uploads.
+- Automatic corrections for known typos and lowercase words with one candidate; ambiguous spellings and capitalized words offer correction choices and an Ignore control.
+- Up to 40 flagged words per field are shown at a time; long words and protected code, links, addresses, identifiers, and template fields are skipped.
+- Third party licenses are included in THIRD_PARTY_LICENSES.txt.
+
 ## 2.3.1
 
 ### Improved

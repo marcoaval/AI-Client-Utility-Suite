@@ -51,12 +51,20 @@ test('prompt coaching uses supplied details without inventing context or sending
 test('spelling review skips protected content and applies only selected occurrences', () => {
   const input = 'teh adress Teh Alice {{teh}} `teh` https://example.com/teh person@teh.com /teh/file teh.js some_teh teh2 caféteh\n```js\nteh\n```\nteh';
   const suggestions = h.spellingSuggestions(input);
-  assert.deepEqual(Array.from(suggestions, item => item.word), ['teh', 'adress', 'teh']);
+  assert.deepEqual(Array.from(suggestions, item => item.word), ['teh', 'adress', 'Teh', 'teh']);
   const corrected = h.applySpellingCorrections(input, [suggestions[1]]);
   assert.equal(corrected, input.replace('adress', 'address'));
   assert.equal(h.applySpellingCorrections('changed', suggestions), 'changed');
   assert.equal(h.spellingSuggestions('```js\nteh').length, 0);
   assert.equal(h.spellingSuggestions('{{teh').length, 0);
+});
+
+test('full dictionary suggests words beyond the typo list and accepts valid vocabulary', () => {
+  assert.equal(h.spellingSuggestions('photosynthesis magnificent architecture').length, 0);
+  const suggestions = h.spellingSuggestions('magnifisent architecturre');
+  assert.ok(suggestions.some(item => item.choices.includes('magnificent')));
+  assert.ok(suggestions.some(item => item.choices.includes('architecture')));
+  assert.equal(h.spellingSuggestions('Teh')[0].automatic, false);
 });
 
 test('bookmarks are separate from locks and reject unsafe paths', () => {

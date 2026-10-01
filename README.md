@@ -45,7 +45,7 @@ Prompt edits and changes to template defaults keep up to 50 earlier versions. **
 
 **Text tools** clean spacing and blank lines, convert common Markdown formatting to plain text, and display word and character counts. Fenced code keeps its internal spacing. Preview the result before copying.
 
-Prompt Coach automatically corrects common English typos after a space or punctuation, or when you leave a text field. Use **Undo last spelling correction** to restore the last change, or turn off **Automatically correct common spelling mistakes** to keep your spelling. Code in backticks, links, addresses, file paths, identifiers, capitalized words, and template fields are skipped. This is a limited local checker, not a full dictionary; review names and technical terms yourself. Browser spellcheck is also enabled and follows browser settings.
+Prompt Coach uses a bundled full English dictionary and nspell engine locally, without sending text to a server or downloading a dictionary while you type. Common typos and lowercase words with a single candidate are corrected after a space, punctuation, or leaving a field. Other misspellings show replacement choices beneath the spelling controls; select a spelling or **Ignore this word** for the current coach session. Capitalized words offer suggestions without automatic replacement. Use **Undo last spelling correction** or disable automatic corrections when needed. Code in backticks, links, addresses, paths, identifiers, and template fields are protected. Up to 40 flagged words per field are shown at a time, and words longer than 48 characters are skipped. This English checker cannot guarantee the intended spelling of names, specialist terms, or every word. Browser spellcheck remains available. See **THIRD_PARTY_LICENSES.txt** for dependency licenses.
 
 ### Bookmarks, saved views, and shortcuts
 
@@ -104,7 +104,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.3.1 adds automatic spelling corrections to Prompt Coach, alongside field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
+Version 2.4.0 adds full English dictionary spelling checks to Prompt Coach, alongside field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
 
 ## Privacy
 
