@@ -47,7 +47,10 @@ Prompt edits and changes to template defaults keep up to 50 earlier versions. **
 
 Prompt Coach uses a bundled full English dictionary and nspell engine locally, without sending text to a server or downloading a dictionary while you type. Common typos and lowercase words with a single candidate are corrected after a space, punctuation, or leaving a field. Other misspellings show replacement choices beneath the spelling controls; select a spelling or **Ignore this word** for the current coach session. Capitalized words offer suggestions without automatic replacement. Use **Undo last spelling correction** or disable automatic corrections when needed. Code in backticks, links, addresses, paths, identifiers, and template fields are protected. Up to 40 flagged words per field are shown at a time, and words longer than 48 characters are skipped. This English checker cannot guarantee the intended spelling of names, specialist terms, or every word. Browser spellcheck remains available. See **THIRD_PARTY_LICENSES.txt** for dependency licenses.
 
+Spelling suggestions now use the whole request and optional details, repeated vocabulary, gaming cues, and choices you previously made. Known names such as Fortnite, Minecraft, Roblox, GitHub, and Tampermonkey remain valid. In gaming context, a nearby misspelling can favor Fortnite while still offering other spellings. Context-based automatic corrections keep alternative buttons beneath the controls. Choose **Remember as a name** for unfamiliar names, or **Clear learned spellings and names** to reset personal learning. Up to 200 chosen corrections and 200 names are stored locally, with hashed context features rather than full prompts. This ranking uses local heuristics and can guess incorrectly; review the suggestion and use Undo when needed.
+
 ### Bookmarks, saved views, and shortcuts
+
 
 Use the star beside a cleaner row or **Chat bookmarks** to save a conversation link. Bookmarks are separate from locks and do not protect a chat from cleanup. Both are stored separately for each client.
 
@@ -104,11 +107,11 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.4.0 adds full English dictionary spelling checks to Prompt Coach, alongside field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
+Version 2.5.0 adds contextual spelling suggestions and remembered names to Prompt Coach, alongside field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
 
 ## Privacy
 
-Prompts, earlier prompt versions, template defaults, settings, bookmarks, saved views, chat locks, cached sidebar metadata, and captured export drafts are stored locally through Tampermonkey's userscript storage. The userscript does not send this saved content to an external server. Prompt and conversation exports can contain personal text; share only the files you intend to share. The prompt coach and text tools process text locally.
+Chosen spelling corrections, remembered names, hashed spelling context features, prompts, earlier prompt versions, template defaults, settings, bookmarks, saved views, chat locks, cached sidebar metadata, and captured export drafts are stored locally through Tampermonkey's userscript storage. The userscript does not send this saved content to an external server. Prompt and conversation exports can contain personal text; share only the files you intend to share. The prompt coach and text tools process text locally.
 
 ## License
 

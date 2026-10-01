@@ -10,7 +10,7 @@ const context = vm.createContext({
   document: {}, console, TextEncoder, TextDecoder,
 });
 vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) +
-  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat, revisePrompt, promptSnapshot, formatText, coachPrompt, spellingSuggestions, applySpellingCorrections, validChatHref, normalizeView, toggleBookmark, loadBookmarks, snapshotText, exportFilename, crc32, zipFiles, backupFiles, domMessageText }; })();', context);
+  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat, revisePrompt, promptSnapshot, formatText, coachPrompt, spellingSuggestions, applySpellingCorrections, rankSpellingChoices, spellingFeatures, rememberSpellingChoice, validChatHref, normalizeView, toggleBookmark, loadBookmarks, snapshotText, exportFilename, crc32, zipFiles, backupFiles, domMessageText }; })();', context);
 const h = context.helpers;
 const day = value => h.parseDateInput(value);
 
@@ -65,6 +65,29 @@ test('full dictionary suggests words beyond the typo list and accepts valid voca
   assert.ok(suggestions.some(item => item.choices.includes('magnificent')));
   assert.ok(suggestions.some(item => item.choices.includes('architecture')));
   assert.equal(h.spellingSuggestions('Teh')[0].automatic, false);
+});
+
+test('proper names remain valid and gaming context ranks Fortnite with alternatives', () => {
+  assert.equal(h.spellingSuggestions('fortnite Minecraft Roblox').length, 0);
+  const ranked = h.rankSpellingChoices('fortnigt', ['fortnight', 'fortnite'], 'Help with battle royale skins in this game');
+  assert.equal(ranked.choices[0], 'Fortnite');
+  assert.ok(ranked.choices.includes('fortnight'));
+  assert.equal(ranked.contextual, true);
+  const typo = h.spellingSuggestions('play fortnigt battle royale').find(item => item.word === 'fortnigt');
+  assert.equal(typo.choices[0], 'Fortnite');
+});
+
+test('chosen corrections learn hashed context rather than full prompts', () => {
+  const store = new Map(), previousGet = context.GM_getValue, previousSet = context.GM_setValue;
+  context.GM_getValue = (key, fallback) => store.get(key) ?? fallback;
+  context.GM_setValue = (key, value) => store.set(key, value);
+  try {
+    h.rememberSpellingChoice('ther', 'their', 'project team owns code');
+    const memory = JSON.parse(store.get('aiClientUtilitySuite.spellingMemory'));
+    assert.equal(memory[0].replacement, 'their');
+    assert.ok(memory[0].features.every(feature => feature.startsWith('prompt_')));
+    assert.equal(h.rankSpellingChoices('ther', ['there', 'their'], 'team owns project code', memory).choices[0], 'their');
+  } finally { context.GM_getValue = previousGet; context.GM_setValue = previousSet; }
 });
 
 test('bookmarks are separate from locks and reject unsafe paths', () => {

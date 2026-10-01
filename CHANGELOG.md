@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.0
+
+### Improved
+- Spelling candidates use the whole request and optional details, repeated vocabulary, gaming cues, and previously chosen corrections to rank likely spellings. Ranking is a local heuristic, not a language model.
+- Known game and product names such as Fortnite, Minecraft, Roblox, and GitHub remain valid. Nearby misspellings can suggest these names, with gaming context favoring Fortnite over fortnight.
+- Context-based automatic corrections keep buttons for alternative spellings. Names can be remembered, and spelling choices influence similar future wording.
+- Clear learned spellings and names removes locally stored choices and custom names. Up to 200 selected corrections and 200 names are retained; context is stored as hashed features rather than full prompts.
+
 ## 2.4.0
 
 ### Improved

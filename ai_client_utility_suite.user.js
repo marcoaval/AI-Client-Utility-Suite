@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.4.0
+// @version      2.5.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -50981,14 +50981,63 @@ is-buffer/index.js:
     return { tips: tips.length ? tips : ['The request has a useful starting structure. Check the details and intended meaning before using it.'], rewrite: parts.join('\n\n') };
   }
 
-  function spellingSuggestions(text) {
+  const SPELLING_MEMORY_KEY = 'aiClientUtilitySuite.spellingMemory';
+  const SPELLING_NAMES_KEY = 'aiClientUtilitySuite.spellingNames';
+  const spellingNames = new Map(['Fortnite', 'Minecraft', 'Roblox', 'Valorant', 'Overwatch', 'Steam', 'Xbox', 'PlayStation', 'Nintendo', 'ChatGPT', 'Claude', 'Tampermonkey', 'GitHub', 'Discord', 'Spotify', 'YouTube', 'TikTok', 'Instagram'].map(name => [name.toLowerCase(), name]));
+  const registeredNames = new Set();
+  const builtinSpellingNames = new Map(spellingNames);
+
+  function spellingFeatures(text) {
+    return [...new Set((String(text).toLowerCase().match(/[a-z]{3,}/g) || []).filter(word => !['the', 'and', 'for', 'with', 'this', 'that', 'you', 'can', 'please', 'task'].includes(word)).map(promptId))].slice(0, 160);
+  }
+
+  function spellingDistance(left, right) {
+    let row = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let i = 0; i < left.length; i++) {
+      const next = [i + 1];
+      for (let j = 0; j < right.length; j++) next.push(Math.min(next[j] + 1, row[j + 1] + 1, row[j] + (left[i] === right[j] ? 0 : 1)));
+      row = next;
+    }
+    return row[right.length];
+  }
+
+  function rankSpellingChoices(word, choices, fullPrompt, memory = []) {
+    const lower = fullPrompt.toLowerCase(), features = new Set(spellingFeatures(fullPrompt));
+    const gaming = /\b(game|gaming|play|playing|battle|royale|skin|skins|vbucks|epic|console|gamer|fps)\b/.test(lower);
+    const ranked = [...new Set(choices)].map((choice, index) => {
+      const candidate = choice.toLowerCase();
+      let score = (choices.length - index) / 100;
+      if ((lower.match(/[a-z]+/g) || []).includes(candidate)) score += 3;
+      if (gaming && ['fortnite', 'minecraft', 'roblox', 'valorant', 'overwatch'].includes(candidate)) score += 5;
+      if (candidate === 'fortnight' && /\b(weeks|days|duration|time|two|holiday)\b/.test(lower) && !gaming) score += 5;
+      for (const record of memory.filter(item => item?.word === word.toLowerCase() && item.replacement?.toLowerCase() === candidate && Array.isArray(item.features))) {
+        const overlap = record.features.filter(feature => features.has(feature)).length;
+        const similarity = overlap / Math.max(1, new Set([...features, ...record.features]).size);
+        if (similarity >= 0.25) score += 8 * similarity;
+      }
+      return { choice: spellingNames.get(candidate) || choice, score };
+    }).sort((a, b) => b.score - a.score);
+    return { choices: ranked.map(item => item.choice), contextual: ranked.length > 1 && ranked[0].score - ranked[1].score >= 2 };
+  }
+
+  function rememberSpellingChoice(word, replacement, fullPrompt) {
+    const stored = readStored(SPELLING_MEMORY_KEY, []), memory = Array.isArray(stored) ? stored : [];
+    GM_setValue(SPELLING_MEMORY_KEY, JSON.stringify([...memory, { word: word.toLowerCase(), replacement, features: spellingFeatures(fullPrompt) }].slice(-200)));
+  }
+
+  function spellingSuggestions(text, fullPrompt = text) {
     const fixes = { spellingg: 'spelling', speling: 'spelling', corection: 'correction', correcton: 'correction', automaticly: 'automatically', automaticaly: 'automatically', promt: 'prompt', promp: 'prompt', freind: 'friend', freinds: 'friends', computewr: 'computer', th9ihk: 'think', awny: 'any', yuou: 'you', yotu: 'you', teh: 'the', hte: 'the', thier: 'their', recieve: 'receive', recieved: 'received', recieving: 'receiving', seperate: 'separate', seperately: 'separately', definately: 'definitely', becuase: 'because', becasue: 'because', adress: 'address', occured: 'occurred', occurance: 'occurrence', accomodate: 'accommodate', acheive: 'achieve', acheived: 'achieved', beleive: 'believe', wierd: 'weird', langauge: 'language', sentance: 'sentence', grammer: 'grammar', relevent: 'relevant', enviroment: 'environment', requirments: 'requirements', optioinal: 'optional', explaiun: 'explain', troublshoot: 'troubleshoot', knolw: 'know', somertihng: 'something', donty: "don't", doesnt: "doesn't", didnt: "didn't", isnt: "isn't", wouldnt: "wouldn't", couldnt: "couldn't", shouldnt: "shouldn't" };
     const source = String(text);
     const protectedRanges = [...source.matchAll(/(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1[^\n]*(?=\n|$)|$)|`[^`\n]*(?:`|$)|\{\{[\s\S]*?(?:\}\}|$)|(?:https?:\/\/|www\.)\S+|\b[^\s]+@[^\s]+|(?:[A-Za-z]:\\|\.{0,2}\/)[^\s]+|\b[\w]+(?:[_.\/-][\w]+)+\b|\b\w*\d\w*\b/g)].map(match => [match.index, match.index + match[0].length]);
     const suggestions = [];
     const dictionary = EnglishSpelling.get();
+    const savedNames = readStored(SPELLING_NAMES_KEY, []);
+    for (const name of Array.isArray(savedNames) ? savedNames : []) if (typeof name === 'string' && /^[a-z]{2,48}$/i.test(name)) spellingNames.set(name.toLowerCase(), name);
+    for (const [key] of spellingNames) if (!registeredNames.has(key)) { dictionary.add(key); registeredNames.add(key); spellingCache.clear(); }
+    const storedMemory = readStored(SPELLING_MEMORY_KEY, []), memory = Array.isArray(storedMemory) ? storedMemory : [];
     for (const match of source.matchAll(/[\p{L}]+(?:['’][\p{L}]+)*/gu)) {
       const word = match[0], start = match.index, end = start + word.length;
+      if (spellingNames.has(word.toLowerCase())) continue;
       if (!/^[a-z]+(?:['’][a-z]+)*$/i.test(word) || /[a-z][A-Z]/.test(word) || word.length > 48 || protectedRanges.some(([from, to]) => start < to && end > from)) continue;
       if (word !== word.toLowerCase() && Object.hasOwn(fixes, word.toLowerCase())) {
         const replacement = word === word.toUpperCase() ? fixes[word.toLowerCase()].toUpperCase() : fixes[word.toLowerCase()][0].toUpperCase() + fixes[word.toLowerCase()].slice(1);
@@ -50997,8 +51046,11 @@ is-buffer/index.js:
       if (Object.hasOwn(fixes, word)) { suggestions.push({ start, end, word, replacement: fixes[word], automatic: true, choices: [fixes[word]] }); continue; }
       if (dictionary.correct(word.replace(/’/g, "'"))) continue;
       let choices = spellingCache.get(word);
-      if (!choices) { choices = dictionary.suggest(word).slice(0, 6); if (spellingCache.size > 1000) spellingCache.clear(); spellingCache.set(word, choices); }
-      suggestions.push({ start, end, word, replacement: choices[0] || word, automatic: choices.length === 1 && word === word.toLowerCase(), choices });
+      if (!choices) { choices = dictionary.suggest(word).slice(0, 16); if (spellingCache.size > 1000) spellingCache.clear(); spellingCache.set(word, choices); }
+      const nearbyNames = word.length >= 5 ? [...spellingNames.keys()].filter(name => Math.abs(name.length - word.length) <= 2 && spellingDistance(word.toLowerCase(), name) <= 2) : [];
+      const ranked = rankSpellingChoices(word, [...choices, ...nearbyNames], fullPrompt, memory);
+      choices = ranked.choices.slice(0, 6);
+      suggestions.push({ start, end, word, replacement: choices[0] || word, automatic: (choices.length === 1 || ranked.contextual) && word === word.toLowerCase(), choices, contextual: ranked.contextual });
       if (suggestions.length >= 40) break;
     }
     return suggestions;
@@ -51037,13 +51089,24 @@ is-buffer/index.js:
     box.querySelector('.acus-request').closest('label').after(spelling);
     const autoSpelling = spelling.querySelector('input'), spellingStatus = spelling.querySelector('[role="status"]'), spellingUndo = spelling.querySelector('button');
     const spellingFields = [request, box.querySelector('.acus-context'), box.querySelector('.acus-constraints'), rewrite];
+    const wholePrompt = () => [request.value, box.querySelector('.acus-context').value, box.querySelector('.acus-constraints').value, suggestionEdited ? rewrite.value : ''].join('\n');
+    const learningHelp = document.createElement('p'); learningHelp.className = 'acus-muted'; learningHelp.textContent = 'Suggestions use the whole prompt and details, gaming context, and corrections you choose. Learning stays local: selected spellings, remembered names, and hashed context features are saved, not full prompts. These are heuristic guesses; other meanings remain possible.'; spelling.append(learningHelp);
+    const resetLearning = button('Clear learned spellings and names'); resetLearning.onclick = () => {
+      if (!confirm('Clear learned spelling choices and remembered names? Built-in names remain available.')) return;
+      GM_setValue(SPELLING_MEMORY_KEY, '[]'); GM_setValue(SPELLING_NAMES_KEY, '[]');
+      for (const key of registeredNames) if (!builtinSpellingNames.has(key)) EnglishSpelling.get().remove(key);
+      spellingNames.clear(); for (const [key, value] of builtinSpellingNames) spellingNames.set(key, value);
+      registeredNames.clear(); spellingCache.clear(); showDictionarySuggestions(); spellingStatus.textContent = 'Learned spellings and names cleared.';
+    }; spelling.append(resetLearning);
+    const alternatives = document.createElement('div'); spelling.append(alternatives);
     let lastCorrection = null;
     const undoneValues = new WeakMap();
     const correctSpelling = (field, completed = false) => {
       if (!autoSpelling.checked) return;
       const before = field.value, start = field.selectionStart, end = field.selectionEnd;
       if (undoneValues.get(field) === before) return;
-      const suggestions = spellingSuggestions(before).filter(item => item.automatic && (completed || item.end < before.length && /[\s.,!?;:)]/.test(before[item.end])));
+      const contextText = wholePrompt();
+      const suggestions = spellingSuggestions(before, contextText).filter(item => item.automatic && (completed || item.end < before.length && /[\s.,!?;:)]/.test(before[item.end])));
       if (!suggestions.length) return;
       const after = applySpellingCorrections(before, suggestions);
       const adjust = position => position + suggestions.filter(item => item.end <= position).reduce((sum, item) => sum + item.replacement.length - item.word.length, 0);
@@ -51051,18 +51114,31 @@ is-buffer/index.js:
       field.setSelectionRange(adjust(start), adjust(end));
       lastCorrection = { field, before, after, start, end }; spellingUndo.disabled = false;
       spellingStatus.textContent = `Corrected ${suggestions.map(item => `${item.word} → ${item.replacement}`).join(', ')}. Undo is available.`;
+      alternatives.replaceChildren();
+      for (const item of suggestions.filter(item => item.choices.length > 1)) {
+        const row = document.createElement('div'); row.className = 'acus-prompt-actions'; const label = document.createElement('span'); label.textContent = `${item.word}: ${item.replacement} suggested from context. Other spellings:`; row.append(label);
+        for (const choice of item.choices) {
+          const action = button(choice); action.onclick = () => {
+            if (!lastCorrection || lastCorrection.field !== field || field.value !== lastCorrection.after) { alternatives.replaceChildren(); spellingStatus.textContent = 'The text changed; review the current spelling suggestions instead.'; return; }
+            item.replacement = choice; const updated = applySpellingCorrections(before, suggestions); field.value = updated; lastCorrection.after = updated;
+            rememberSpellingChoice(item.word, choice, contextText); if (field === rewrite) suggestionEdited = true; review(); showDictionarySuggestions(); spellingStatus.textContent = `Used ${choice} and remembered your choice for similar wording.`;
+          }; row.append(action);
+        }
+        alternatives.append(row);
+      }
     };
     spellingUndo.onclick = () => {
       if (!lastCorrection || lastCorrection.field.value !== lastCorrection.after) { spellingStatus.textContent = 'The corrected field changed. Undo is no longer available.'; spellingUndo.disabled = true; return; }
       const { field, before, start, end } = lastCorrection;
       field.value = before; field.setSelectionRange(start, end); lastCorrection = null; spellingUndo.disabled = true;
       undoneValues.set(field, before);
+      alternatives.replaceChildren();
       if (field === rewrite) suggestionEdited = true;
       review(); spellingStatus.textContent = 'Last spelling correction undone. Turn off automatic corrections to keep the original spelling.'; field.focus();
     };
     for (const field of spellingFields) {
       field.addEventListener('input', event => { if (!event.isComposing) correctSpelling(field, event.inputType === 'insertFromPaste'); });
-      field.addEventListener('blur', () => { correctSpelling(field, true); review(); });
+      field.addEventListener('blur', () => { for (const target of spellingFields) if (target !== rewrite || suggestionEdited) correctSpelling(target, true); review(); });
     }
     const dictionaryResults = spelling.querySelector('.acus-dictionary-results');
     const ignoredWords = new Set();
@@ -51073,12 +51149,13 @@ is-buffer/index.js:
       for (const field of spellingFields) {
         if (field === rewrite && !suggestionEdited) continue;
         const checkedText = field.value;
-        for (const item of spellingSuggestions(checkedText).filter(item => !ignoredWords.has(item.word))) {
+        for (const item of spellingSuggestions(checkedText, wholePrompt()).filter(item => !ignoredWords.has(item.word))) {
           const row = document.createElement('div'); row.className = 'acus-prompt-actions';
           const label = document.createElement('span'); label.textContent = `${field.closest('label').childNodes[0].textContent.trim()}: ${item.word}`; row.append(label);
           for (const replacement of item.choices) {
-            const action = button(replacement); action.setAttribute('aria-label', `Replace ${item.word} with ${replacement} in ${field.closest('label').childNodes[0].textContent.trim()}`); action.onclick = () => {
+            const action = button(replacement === item.choices[0] ? `${replacement} · Suggested` : replacement); action.setAttribute('aria-label', `Replace ${item.word} with ${replacement} in ${field.closest('label').childNodes[0].textContent.trim()}`); action.onclick = () => {
               if (field.value !== checkedText) { showDictionarySuggestions(); return; }
+              rememberSpellingChoice(item.word, replacement, wholePrompt());
               const after = applySpellingCorrections(checkedText, [{ ...item, replacement }]);
               lastCorrection = { field, before: checkedText, after, start: item.start, end: item.end }; spellingUndo.disabled = false;
               field.value = after; if (field === rewrite) suggestionEdited = true;
@@ -51086,11 +51163,18 @@ is-buffer/index.js:
             }; row.append(action);
           }
           if (!item.choices.length) { const none = document.createElement('span'); none.textContent = 'No dictionary suggestion; edit this word manually.'; row.append(none); }
-          const ignore = button('Ignore this word'); ignore.onclick = () => { ignoredWords.add(item.word); showDictionarySuggestions(); }; row.append(ignore); dictionaryResults.append(row);
+          const ignore = button('Ignore this word'); ignore.onclick = () => { ignoredWords.add(item.word); showDictionarySuggestions(); }; row.append(ignore);
+          const rememberName = button('Remember as a name'); rememberName.onclick = () => {
+            const stored = readStored(SPELLING_NAMES_KEY, []), names = Array.isArray(stored) ? stored : [];
+            GM_setValue(SPELLING_NAMES_KEY, JSON.stringify([...new Set([...names, item.word])].slice(-200))); spellingCache.clear(); showDictionarySuggestions(); spellingStatus.textContent = `Remembered ${item.word} as a name on this browser.`;
+          }; row.append(rememberName); dictionaryResults.append(row);
         }
       }
     };
-    const scheduleDictionary = () => { clearTimeout(dictionaryTimer); dictionaryTimer = setTimeout(showDictionarySuggestions, 500); };
+    const scheduleDictionary = () => {
+      if (lastCorrection && lastCorrection.field.value !== lastCorrection.after) { alternatives.replaceChildren(); spellingUndo.disabled = true; lastCorrection = null; }
+      clearTimeout(dictionaryTimer); dictionaryTimer = setTimeout(showDictionarySuggestions, 500);
+    };
     for (const field of spellingFields) field.addEventListener('input', scheduleDictionary);
     request.value = typeof initial === 'string' ? initial : '';
     let suggestionEdited = false;
@@ -52817,7 +52901,7 @@ is-buffer/index.js:
       let storage = 'Unavailable';
       try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
       report.value = [
-        'AI Client Utility Suite 2.4.0',
+        'AI Client Utility Suite 2.5.0',
         `Checked: ${new Date().toISOString()}`,
         `Site: ${location.hostname}`,
         `Page load: ${document.readyState}`,
