@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.2.0
+// @version      2.2.1
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -1995,13 +1995,15 @@
       if (rows.some(item => item.checkbox.checked)) showSelectedReview();
     };
 
-    const selectAll = button('Select shown', 'secondary');
+    const selectAll = button('Select visible chats', 'secondary');
+    selectAll.title = 'Select unlocked chats matching the current search and view, including rows below the scroll position.';
     selectAll.onclick = () => {
       rows.forEach(item => { if (!item.row.hidden && !item.removed && !item.chat.locked) item.checkbox.checked = true; });
       refreshSelection();
     };
 
-    const deselectAll = button('Deselect shown', 'secondary');
+    const deselectAll = button('Deselect visible chats', 'secondary');
+    deselectAll.title = 'Deselect chats matching the current search and view. Selections hidden by filters stay selected.';
     deselectAll.onclick = () => {
       rows.forEach(item => { if (!item.row.hidden) item.checkbox.checked = false; });
       refreshSelection();
@@ -2923,7 +2925,7 @@
       let storage = 'Unavailable';
       try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
       report.value = [
-        'AI Client Utility Suite 2.2.0',
+        'AI Client Utility Suite 2.2.1',
         `Checked: ${new Date().toISOString()}`,
         `Site: ${location.hostname}`,
         `Page load: ${document.readyState}`,

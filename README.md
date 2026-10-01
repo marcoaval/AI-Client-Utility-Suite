@@ -10,7 +10,7 @@ Search indexed sidebar history by loading older sidebar entries, then returning 
 ### Chat Cleaner
 Review indexed sidebar history, use suggested and protected title filters, and archive or delete selected conversations after confirmation. Archive is the initial action; choose **Delete permanently** in the action selector to delete chats.
 
-Search loaded titles and use **Show chats** to view all chats, selected chats, suggested chats, or hide protected chats. **Select shown** and **Deselect shown** affect only the visible list. Hidden selections remain selected and appear in **Review selected** before an action.
+Search loaded titles and use **Show chats** to view all chats, selected chats, suggested chats, or hide protected chats. **Select visible chats** and **Deselect visible chats** affect only chats matching the current search and view, including rows below the scroll position. Hidden selections remain selected and appear in **Review selected** before an action.
 
 Cleanup displays progress and failure details. **Stop after current chat** lets the current action finish and leaves unprocessed chats selected. Retry asks for confirmation and includes only failed chats that remain selected, using the original archive or delete action. Uncheck any chat you want to keep. Successful chats leave the list. A failed attempt may already have reached the site's confirmation step; close an unfinished confirmation before retrying.
 
@@ -102,7 +102,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.2.0 adds a letter-size slider and live Prompt Coach feedback alongside browser-specific troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
+Version 2.2.1 clarifies cleaner selection labels alongside the letter-size slider, live Prompt Coach feedback, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
 
 ## Privacy
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.1
+
+### Improved
+- Chat Cleaner now labels its selection controls Select visible chats and Deselect visible chats to clarify that they affect the current search and view.
+
+### Community
+- Thanks to @sam-cre for the organization feedback in issue #5. The clearer selection labels continue that work.
+
 ## 2.2.0
 
 ### Improved
