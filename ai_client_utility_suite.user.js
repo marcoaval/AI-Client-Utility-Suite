@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.1.0
+// @version      2.1.1
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -2897,6 +2897,15 @@
     const box = document.createElement('div');
     box.innerHTML = `<p class="acus-muted">Choose the problem below. Checks describe this page; they cannot inspect extension permissions or prove that every client feature works.</p>
       <details open><summary>AI Tools button is missing</summary><ol class="acus-tips"><li>Open chatgpt.com or claude.ai in a normal browser tab. Other domains and browser side panels may not run the script.</li><li>Open Tampermonkey and check that both the extension and AI Client Utility Suite are enabled. Install the latest script if it is missing from the dashboard.</li><li>In your browser's extension settings, allow Tampermonkey access to this site. In Opera, open opera://extensions. Enable Allow User Scripts if available, or Developer Mode as directed by Tampermonkey.</li><li>Refresh the page after changing permissions. Private windows may need separate extension permission.</li><li>If Tampermonkey lists the suite as enabled on this page but the button is still missing, try Alt + Shift + K if the suite shortcut is enabled. Temporarily disable other userscripts on this site to check for conflicts, then restore them.</li></ol><p><a href="https://www.tampermonkey.net/faq.php?locale=en&q=Q209" target="_blank" rel="noopener noreferrer">Tampermonkey userscript permission guide</a></p></details>
+      <details><summary>Browser permission setup</summary><p>First enable Tampermonkey and the suite in its dashboard. Then follow your browser below. Setting names vary by version; follow any permission prompt shown by Tampermonkey and refresh the site afterward.</p>
+      <h4>Chrome</h4><p>Open chrome://extensions → Tampermonkey → Details. Enable Allow User Scripts if shown, or Developer Mode as directed by Tampermonkey. Under Site access, allow chatgpt.com or claude.ai. For an incognito window, also enable Allow in incognito.</p>
+      <h4>Edge</h4><p>Open edge://extensions → Tampermonkey → Details. Allow access to the affected site. Enable Allow User Scripts if offered, or Developer Mode if Tampermonkey requests it. InPrivate windows need separate permission.</p>
+      <h4>Brave</h4><p>Open brave://extensions → Tampermonkey → Details. Allow site access and enable Allow User Scripts if shown, or Developer Mode as directed by Tampermonkey. Private windows need separate permission.</p>
+      <h4>Opera and Opera GX</h4><p>Open opera://extensions and expand Tampermonkey's details. Allow access to the site and enable Allow User Scripts if offered, or Developer Mode as directed by Tampermonkey. If Allow access to search page results is shown and the script fails after following a search result, check that permission too. Private windows need separate permission.</p>
+      <h4>Vivaldi and other Chromium browsers</h4><p>In Vivaldi, open vivaldi://extensions. In other browsers, use the Extensions manager. Open Tampermonkey's details, allow site access, and enable Allow User Scripts if offered, or Developer Mode if requested. Private windows may need separate permission.</p>
+      <h4>Firefox</h4><p>Open about:addons → Extensions → Tampermonkey. Enable the extension, review its Permissions tab, and allow any required website access. For private windows, select Allow under Run in Private Windows in its details. Chrome's Allow User Scripts and Developer Mode instructions do not apply to Firefox.</p>
+      <h4>Safari on Mac</h4><p>Open Safari → Settings → Extensions and enable Tampermonkey. Open its website permissions and allow the affected site. If using a private window, allow the extension in Private Browsing when that option is available. Chrome's Developer Mode instructions do not apply.</p>
+      <h4>Mobile browsers and managed computers</h4><p>These are desktop setup instructions, not a guarantee of support in every browser. Mobile browsers vary in userscript extension support. Use a manager that supports this script's Tampermonkey storage APIs. If your browser has no compatible extension support, changing permissions will not enable the toolbox. Work or school policies may prevent userscripts; contact the administrator when settings are locked.</p></details>
       <details><summary>Chats are missing or loading slowly</summary><p>The suite indexes sidebar entries that the client makes available. Open the sidebar, wait for the page to finish loading, and use Refresh history in Chat Cleaner. Cached history may be incomplete. Chat numbers follow indexed sidebar order and are not verified creation dates.</p><p>For exports, wait for the conversation to load. Capture waits up to 90 seconds per chat. Pause and resume the draft when the connection improves, or retry failed captures. After a page reload, reopen Conversation export and choose Resume draft. Exports only include loaded messages.</p></details>
       <details><summary>A button or cleanup action fails</summary><p>Finish or close any native client confirmation first. Check whether the chat is locked, then review the reported failure. Retry only the chats you still want to process. If the client layout changed, install the latest suite update and refresh. Never repeat a delete action without checking whether the original conversation still exists.</p></details>
       <details><summary>Saved prompts or settings seem missing</summary><p>Check that you are using the same browser profile and userscript manager. Storage does not automatically sync between computers. Import a Prompt Library backup if you have one. Bookmarks, locks, history, and export drafts are separate for each client. Export the library before reinstalling the extension or clearing its data.</p></details>
@@ -2906,7 +2915,7 @@
       let storage = 'Unavailable';
       try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
       report.value = [
-        'AI Client Utility Suite 2.1.0',
+        'AI Client Utility Suite 2.1.1',
         `Checked: ${new Date().toISOString()}`,
         `Site: ${location.hostname}`,
         `Page load: ${document.readyState}`,

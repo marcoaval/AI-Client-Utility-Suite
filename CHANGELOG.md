@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.1
+
+### Improved
+- Browser permission instructions in the troubleshooting screen and standalone guide for Chrome, Edge, Brave, Opera, Opera GX, Vivaldi, Firefox, and Safari on Mac.
+- Separate guidance for private windows, mobile compatibility, and managed browsers, with browser-specific settings and official help links.
+
 ## 2.1.0
 
 ### Added

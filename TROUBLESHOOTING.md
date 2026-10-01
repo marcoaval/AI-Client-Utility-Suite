@@ -12,6 +12,42 @@
 
 An in-app troubleshooting screen cannot open when the browser prevents the script from running. This guide remains available without the toolbox.
 
+## Browser permission setup
+
+Enable Tampermonkey and the suite in its dashboard first. Setting names vary by browser version. Follow any permission prompt shown by Tampermonkey and refresh the affected site after making changes. Permission problems are one possible cause; an enabled script can also fail during startup.
+
+### Chrome
+
+Open `chrome://extensions` → **Tampermonkey → Details**. Enable **Allow User Scripts** if shown, or **Developer Mode** as directed by Tampermonkey. Under **Site access**, allow `chatgpt.com` or `claude.ai`. For incognito windows, also enable **Allow in incognito**.
+
+### Edge
+
+Open `edge://extensions` → **Tampermonkey → Details**. Allow access to the affected site. Enable **Allow User Scripts** if offered, or **Developer Mode** if Tampermonkey requests it. InPrivate windows need separate permission.
+
+### Brave
+
+Open `brave://extensions` → **Tampermonkey → Details**. Allow site access and enable **Allow User Scripts** if shown, or **Developer Mode** as directed by Tampermonkey. Private windows need separate permission.
+
+### Opera and Opera GX
+
+Open `opera://extensions` and expand Tampermonkey's details. Allow access to the affected site. Enable **Allow User Scripts** if offered, or **Developer Mode** as directed by Tampermonkey. If **Allow access to search page results** is shown and the script fails after following a search result, check that permission too. Private windows need separate permission.
+
+### Vivaldi and other Chromium browsers
+
+In Vivaldi, open `vivaldi://extensions`. In other browsers, use the Extensions manager. Open Tampermonkey's details, allow site access, and enable **Allow User Scripts** if offered, or **Developer Mode** if requested. Private windows may need separate permission. See [Tampermonkey's Chromium permission guide](https://www.tampermonkey.net/faq.php?locale=en&q=Q209).
+
+### Firefox
+
+Open `about:addons` → **Extensions → Tampermonkey**. Enable the extension, review its **Permissions** tab, and allow required website access. For private windows, select **Allow** under **Run in Private Windows** in its details. Chrome's **Allow User Scripts** and **Developer Mode** instructions do not apply to Firefox. See [Firefox's private window instructions](https://support.mozilla.org/en-US/kb/extensions-private-browsing).
+
+### Safari on Mac
+
+Open **Safari → Settings → Extensions** and enable Tampermonkey. Open its website permissions and allow the affected site. If using a private window, allow the extension in Private Browsing when that option is available. Chrome's Developer Mode instructions do not apply. See [Apple's extension permission guide](https://support.apple.com/en-gb/102343).
+
+### Mobile browsers and managed computers
+
+These are desktop setup instructions, not a guarantee that every browser supports the suite. Mobile browsers vary in userscript extension support. Use a compatible manager supporting this script's Tampermonkey storage APIs. A browser without compatible extension support cannot run the toolbox just by changing permissions. Work or school policies can block userscripts; contact the administrator when settings are locked.
+
 ## Missing chats or slow loading
 
 Open the sidebar and wait for the client to finish loading before using **Refresh history** in Chat Cleaner. The index includes sidebar entries the client makes available and may be incomplete. Chat numbers reflect indexed sidebar order, not verified creation dates.
