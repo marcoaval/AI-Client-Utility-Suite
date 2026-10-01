@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.2.2
+// @version      2.3.0
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -1188,6 +1188,27 @@
     return { tips: tips.length ? tips : ['The request has a useful starting structure. Check the details and intended meaning before using it.'], rewrite: parts.join('\n\n') };
   }
 
+  function spellingSuggestions(text) {
+    const fixes = { teh: 'the', hte: 'the', thier: 'their', recieve: 'receive', recieved: 'received', recieving: 'receiving', seperate: 'separate', seperately: 'separately', definately: 'definitely', becuase: 'because', becasue: 'because', adress: 'address', occured: 'occurred', occurance: 'occurrence', accomodate: 'accommodate', acheive: 'achieve', acheived: 'achieved', beleive: 'believe', wierd: 'weird', langauge: 'language', sentance: 'sentence', grammer: 'grammar', relevent: 'relevant', enviroment: 'environment', requirments: 'requirements', optioinal: 'optional', explaiun: 'explain', troublshoot: 'troubleshoot', knolw: 'know', somertihng: 'something', donty: "don't", doesnt: "doesn't", didnt: "didn't", isnt: "isn't", cant: "can't", wont: "won't", wouldnt: "wouldn't", couldnt: "couldn't", shouldnt: "shouldn't" };
+    const source = String(text);
+    const protectedRanges = [...source.matchAll(/(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1[^\n]*(?=\n|$)|$)|`[^`\n]*(?:`|$)|\{\{[\s\S]*?(?:\}\}|$)|(?:https?:\/\/|www\.)\S+|\b[^\s]+@[^\s]+|(?:[A-Za-z]:\\|\.{0,2}\/)[^\s]+|\b[\w]+(?:[_.\/-][\w]+)+\b|\b\w*\d\w*\b/g)].map(match => [match.index, match.index + match[0].length]);
+    const suggestions = [];
+    for (const match of source.matchAll(/[\p{L}]+(?:['’][\p{L}]+)*/gu)) {
+      const word = match[0], start = match.index, end = start + word.length;
+      if (!Object.hasOwn(fixes, word) || protectedRanges.some(([from, to]) => start < to && end > from)) continue;
+      suggestions.push({ start, end, word, replacement: fixes[word] });
+    }
+    return suggestions;
+  }
+
+  function applySpellingCorrections(text, suggestions) {
+    let result = String(text);
+    for (const item of [...suggestions].sort((a, b) => b.start - a.start)) {
+      if (result.slice(item.start, item.end) === item.word) result = result.slice(0, item.start) + item.replacement + result.slice(item.end);
+    }
+    return result;
+  }
+
   function currentDraft() {
     const controls = [...document.querySelectorAll('#prompt-textarea,textarea,[contenteditable="true"][role="textbox"],[contenteditable="true"].ProseMirror,[contenteditable="true"][data-placeholder]')].filter(node => visible(node) && !utilityContains(node) && !node.disabled && !node.readOnly);
     const input = controls.find(node => node.id === 'prompt-textarea') || controls.find(node => node.matches('[contenteditable="true"].ProseMirror')) || controls.find(node => node.closest('form')) || controls[0];
@@ -1205,6 +1226,34 @@
       <label class="acus-check"><input type="checkbox" class="acus-clarify" aria-describedby="acus-coach-clarify-help"> Ask for clarification when essential details are missing</label><p id="acus-coach-clarify-help" class="acus-muted">Adds a request to ask a question before answering if an important detail is missing. Example: ask about your budget before suggesting a computer. This checkbox adds wording to your prompt; it does not start a conversation.</p></details>
       <button class="acus-primary acus-review">Update suggestion</button><ul class="acus-tips" aria-live="polite"></ul><label class="acus-field">Editable suggestion<textarea class="acus-input acus-rewrite"></textarea></label><div class="acus-prompt-actions"><button class="acus-copy">Copy suggestion</button><button class="acus-use acus-primary">Use in prompt editor</button></div><p class="acus-library-status" role="status"></p>`;
     const request = box.querySelector('.acus-request'), rewrite = box.querySelector('.acus-rewrite'), status = box.querySelector('[role="status"]');
+    for (const textarea of box.querySelectorAll('textarea')) textarea.spellcheck = true;
+    const spelling = document.createElement('details');
+    spelling.innerHTML = '<summary>Spelling corrections</summary><p class="acus-muted">Review common English typos locally. This limited checker skips capitalized words, code in backticks, links, addresses, file paths, identifiers, and {{template fields}}. It cannot identify every name or spelling error. Your browser also offers spellcheck when enabled in its settings.</p><label class="acus-field">Text to check<select class="acus-input"><option value="request">Your request</option><option value="context">Context or audience</option><option value="constraints">Requirements or limits</option><option value="rewrite">Editable suggestion</option></select></label><button class="acus-spell-check">Check spelling</button><div class="acus-spell-list"></div><button class="acus-spell-apply acus-primary" disabled>Apply selected corrections</button><p role="status"></p>';
+    box.querySelector('.acus-review').before(spelling);
+    const spellingTarget = spelling.querySelector('select'), spellingList = spelling.querySelector('.acus-spell-list'), spellingStatus = spelling.querySelector('[role="status"]'), spellingApply = spelling.querySelector('.acus-spell-apply');
+    const spellingFields = { request, context: box.querySelector('.acus-context'), constraints: box.querySelector('.acus-constraints'), rewrite };
+    let checkedText = '', checkedField = null, spellingChoices = [];
+    const clearSpelling = () => { spellingList.replaceChildren(); spellingChoices = []; checkedField = null; spellingApply.disabled = true; spellingStatus.textContent = 'Choose Check spelling to review this text.'; };
+    spellingTarget.onchange = clearSpelling;
+    spelling.querySelector('.acus-spell-check').onclick = () => {
+      checkedField = spellingFields[spellingTarget.value]; checkedText = checkedField.value; spellingList.replaceChildren(); spellingChoices = [];
+      for (const suggestion of spellingSuggestions(checkedText)) {
+        const label = document.createElement('label'); label.className = 'acus-check';
+        const check = document.createElement('input'); check.type = 'checkbox';
+        check.onchange = () => { spellingApply.disabled = !spellingChoices.some(item => item.check.checked); };
+        label.append(check, document.createTextNode(`${suggestion.word} → ${suggestion.replacement} · …${checkedText.slice(Math.max(0, suggestion.start - 20), Math.min(checkedText.length, suggestion.end + 20)).replace(/\s+/g, ' ')}…`));
+        spellingList.append(label); spellingChoices.push({ check, suggestion });
+      }
+      spellingApply.disabled = true;
+      spellingStatus.textContent = spellingChoices.length ? `${spellingChoices.length} possible corrections. Select only the ones you want to apply.` : 'No common typos found by this limited checker. Browser spellcheck may offer other suggestions.';
+    };
+    spellingApply.onclick = () => {
+      if (!checkedField || checkedField.value !== checkedText) { clearSpelling(); spellingStatus.textContent = 'The text changed. Check spelling again before applying corrections.'; return; }
+      const chosen = spellingChoices.filter(item => item.check.checked).map(item => item.suggestion);
+      checkedField.value = applySpellingCorrections(checkedText, chosen);
+      checkedField.dispatchEvent(new Event('input', { bubbles: true }));
+      clearSpelling(); spellingStatus.textContent = `${chosen.length} corrections applied. Review the updated text.`;
+    };
     request.value = typeof initial === 'string' ? initial : '';
     let suggestionEdited = false;
     const review = (replaceEdited = false) => {
@@ -2929,7 +2978,7 @@
       let storage = 'Unavailable';
       try { GM_getValue(SETTINGS_KEY, null); storage = 'Read available (write not tested)'; } catch { storage = 'Read failed'; }
       report.value = [
-        'AI Client Utility Suite 2.2.2',
+        'AI Client Utility Suite 2.3.0',
         `Checked: ${new Date().toISOString()}`,
         `Site: ${location.hostname}`,
         `Page load: ${document.readyState}`,

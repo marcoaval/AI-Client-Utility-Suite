@@ -10,7 +10,7 @@ const context = vm.createContext({
   document: {}, console, TextEncoder, TextDecoder,
 });
 vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) +
-  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat, revisePrompt, promptSnapshot, formatText, coachPrompt, validChatHref, normalizeView, toggleBookmark, loadBookmarks, snapshotText, exportFilename, crc32, zipFiles, backupFiles, domMessageText }; })();', context);
+  'this.helpers = { parseDateInput, parseExposedDate, localDateKey, parseSidebarDateRange, chatMatchesDateRange, chatIsBeforeDate, mergeChats, numberChats, parseNumberRange, chatMatchesNumberRange, sortNumberedChats, chatMatchesView, runChatBatch, utilityContains, normalizePrompts, templateFields, fillTemplate, normalizeSettings, setChatLocked, isChatLocked, archiveChat, deleteChat, revisePrompt, promptSnapshot, formatText, coachPrompt, spellingSuggestions, applySpellingCorrections, validChatHref, normalizeView, toggleBookmark, loadBookmarks, snapshotText, exportFilename, crc32, zipFiles, backupFiles, domMessageText }; })();', context);
 const h = context.helpers;
 const day = value => h.parseDateInput(value);
 
@@ -46,6 +46,17 @@ test('prompt coaching uses supplied details without inventing context or sending
   assert.match(reviewed.rewrite, /numbered steps/);
   assert.ok(reviewed.tips.some(tip => tip.includes('concrete example')));
   assert.doesNotMatch(h.coachPrompt('Explain trees').rewrite, /Context:|Requirements:/);
+});
+
+test('spelling review skips protected content and applies only selected occurrences', () => {
+  const input = 'teh adress Teh Alice {{teh}} `teh` https://example.com/teh person@teh.com /teh/file teh.js some_teh teh2 caféteh\n```js\nteh\n```\nteh';
+  const suggestions = h.spellingSuggestions(input);
+  assert.deepEqual(Array.from(suggestions, item => item.word), ['teh', 'adress', 'teh']);
+  const corrected = h.applySpellingCorrections(input, [suggestions[1]]);
+  assert.equal(corrected, input.replace('adress', 'address'));
+  assert.equal(h.applySpellingCorrections('changed', suggestions), 'changed');
+  assert.equal(h.spellingSuggestions('```js\nteh').length, 0);
+  assert.equal(h.spellingSuggestions('{{teh').length, 0);
 });
 
 test('bookmarks are separate from locks and reject unsafe paths', () => {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.0
+
+### Added
+- Optional local spelling review in Prompt Coach for common English typos, with individual correction choices for the request, context, requirements, or editable suggestion.
+- Protected code spans, template fields, links, addresses, file paths, identifiers, and capitalized words. Changed text must be checked again before corrections can be applied.
+- Browser spellcheck enabled on coach text areas. Available languages and browser spellcheck behavior depend on browser settings.
+
 ## 2.2.2
 
 ### Improved

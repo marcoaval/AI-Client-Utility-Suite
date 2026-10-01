@@ -45,6 +45,8 @@ Prompt edits and changes to template defaults keep up to 50 earlier versions. **
 
 **Text tools** clean spacing and blank lines, convert common Markdown formatting to plain text, and display word and character counts. Fenced code keeps its internal spacing. Preview the result before copying.
 
+In Prompt Coach, expand **Spelling corrections**, choose which field to check, and click **Check spelling**. Select individual suggestions before applying them. The local checker covers a limited set of common English typos and skips capitalized words, code in backticks, links, addresses, file paths, identifiers, and template fields. Review names and technical terms yourself. If the text changes after a check, check again before applying corrections. Browser spellcheck is also enabled on coach text areas; its languages and optional enhanced services follow browser settings.
+
 ### Bookmarks, saved views, and shortcuts
 
 Use the star beside a cleaner row or **Chat bookmarks** to save a conversation link. Bookmarks are separate from locks and do not protect a chat from cleanup. Both are stored separately for each client.
@@ -102,7 +104,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-i
 
 ## Project status
 
-Version 2.2.2 explains each optional Prompt Coach field with examples, alongside clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
+Version 2.3.0 adds optional spelling review to Prompt Coach, alongside field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, saved views, and shortcuts.
 
 ## Privacy
 
