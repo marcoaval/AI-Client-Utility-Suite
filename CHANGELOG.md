@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.7.2
+
+### Fixed
+- Chat Cleaner scans available sidebar history on each opening so range limits reflect the current discovered chat count rather than an old cache.
+- History scans keep loading while making progress instead of stopping after 500 passes. Completed scans remove stale cache entries; incomplete scans preserve previously discovered chats.
+- Number ranges default to 1 through the discovered chat count and display the available numbers beside the controls. Locked and protected chats remain excluded from range selection.
+
 ## 2.7.1
 
 ### Fixed
