@@ -21,7 +21,7 @@ Use **Lock** beside a chat to prevent the suite from selecting, archiving, or de
 ### Cached history and dates
 Click **AI Tools** to open the tools menu directly. History is loaded through the sidebar and cached for later use. The suite does not open or index ChatGPT's native Search chats.
 
-Chat Cleaner numbers the indexed chats **#1 through #N**, starting at the oldest end of the indexed sidebar list. Expand **Select a number range**, enter **From chat number** and **To chat number**, then click **Select number range** to select an inclusive range, such as 1–50. Protected and locked chats are skipped. Review the selection before confirming an action.
+Chat Cleaner scans available sidebar history each time it opens and numbers the indexed chats **#1 through #N**, starting at the oldest end of the indexed sidebar list. The number limit uses the discovered chat count: for example, 850 discovered chats allow numbers 1–850. Expand **Select a number range** to see the count and available numbers. **From chat number** defaults to 1 and **To chat number** defaults to N; edit them and click **Select number range** to select an inclusive range, such as 1–50. Entering the numbers alone does not select or delete anything. Protected and locked chats are skipped. Review the selection before confirming an action.
 
 Use **Organize chats** beside search to choose **Newest first** or **Oldest first**. Newest first is the initial default and your choice is saved. Sorting changes the display order without changing chat numbers, selected chats, or range boundaries. The coverage notice shows how many chats are indexed and when the sidebar was last scanned. It does not guarantee that every account chat has loaded.
 
@@ -111,7 +111,7 @@ Run `node --check ai_client_utility_suite.user.js` and `node --test tests/*.test
 
 ## Project status
 
-Version 2.7.1 fixes cleanup lookup through older sidebar history and prevents unfinished native confirmations from failing every remaining selected chat.
+Version 2.7.2 refreshes the cleaner's discovered chat count on opening and shows number limits based on that count, including histories beyond the former scan cutoff.
 
 ## Privacy
 

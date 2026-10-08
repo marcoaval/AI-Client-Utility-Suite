@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.7.1
+// @version      2.7.2
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -50294,16 +50294,16 @@ is-buffer/index.js:
     let stablePasses = 0;
     let lastCount = collected.size;
     let lastHeight = 0;
-    let safety = 0;
+    let lastProgressAt = Date.now();
 
-    while (stablePasses < 10 && safety < 500) {
-      safety++;
+    while (stablePasses < 10 && Date.now() - lastProgressAt < 90000) {
       containers = scrollContainersForChats();
       const container = containers[0];
       if (!container) break;
 
       const max = Math.max(0, container.scrollHeight - container.clientHeight);
       const step = Math.max(220, Math.floor(container.clientHeight * 0.72));
+      const beforeTop = container.scrollTop;
       const next = Math.min(container.scrollTop + step, max);
 
       container.scrollTop = next;
@@ -50346,6 +50346,7 @@ is-buffer/index.js:
         lastHeight = height;
       }
 
+      if (collected.size > lastCount || container.scrollTop > beforeTop + 4 || lastHeight > height + 4) lastProgressAt = Date.now();
       lastCount = collected.size;
     }
 
@@ -50361,12 +50362,12 @@ is-buffer/index.js:
     return [...collected.values()];
   }
 
-  function rememberChats(chats) {
+  function rememberChats(chats, replace = false) {
     if (!cachedHistory) cachedHistory = new Map();
     mergeChats(cachedHistory, chats);
     const ordered = new Map();
     for (const chat of chats) ordered.set(chat.href, cachedHistory.get(chat.href));
-    for (const [href, chat] of cachedHistory) if (!ordered.has(href)) ordered.set(href, chat);
+    if (!replace) for (const [href, chat] of cachedHistory) if (!ordered.has(href)) ordered.set(href, chat);
     cachedHistory = ordered;
     savePersistentChatCache();
     return [...cachedHistory.values()];
@@ -52307,11 +52308,11 @@ is-buffer/index.js:
       input.className = 'vc-input';
       input.disabled = !chats.length;
     }
-    fromNumber.placeholder = 'From chat #';
-    fromNumber.value = viewState.from || '';
-    toNumber.value = viewState.to || '';
+    fromNumber.placeholder = chats.length ? '1' : 'No chats';
+    fromNumber.value = viewState.from || (chats.length ? '1' : '');
+    toNumber.value = viewState.to || (chats.length ? String(chats.length) : '');
     fromNumber.setAttribute('aria-label', 'From chat number');
-    toNumber.placeholder = 'To chat #';
+    toNumber.placeholder = chats.length ? String(chats.length) : 'No chats';
     toNumber.setAttribute('aria-label', 'To chat number');
     const selectNumberRange = button('Select number range', 'accent');
     selectNumberRange.disabled = true;
@@ -52332,7 +52333,9 @@ is-buffer/index.js:
     const numberHint = document.createElement('div');
     numberHint.className = 'vc-subtitle';
     numberHint.style.cssText = 'grid-column:1/-1;max-width:none';
-    numberHint.textContent = 'Numbers stay the same when sorting. Ranges skip protected and locked chats.';
+    numberHint.textContent = chats.length
+      ? `${chats.length} chats found · Available numbers: #1–#${chats.length}. Ranges skip protected and locked chats.`
+      : 'No chats found. Open the sidebar and refresh history.';
     numberHint.title = 'Chat #1 is at the oldest end of sidebar order. Refreshing history can change numbers.';
     const fromField = document.createElement('label');
     fromField.className = 'vc-field';
@@ -52609,12 +52612,6 @@ is-buffer/index.js:
     activeFilters = loadFilters();
     document.getElementById(APP_ID + "-modal")?.remove();
 
-    if (!forceRefresh && cachedHistory?.size) {
-      const chats = rememberChats(getChatLinks());
-      makeOverlay(chats.map(classify));
-      return;
-    }
-
     const loading = document.createElement("div");
     loading.innerHTML = '<div class="acus-status">Loading full chat history...</div>';
     modal("Chat Cleaner", loading);
@@ -52624,7 +52621,8 @@ is-buffer/index.js:
       status.textContent = isLoading ? `Loading chat history (${count})...` : `${count} chats loaded`;
     });
 
-    const chats = rememberChats(scannedChats);
+    const scan = readStored(clientKey(SCAN_KEY), {});
+    const chats = rememberChats(scannedChats, scan.reachedEnd === true);
     if (!loading.isConnected) return;
     document.getElementById(APP_ID + "-modal")?.remove();
     makeOverlay(chats.map(classify));

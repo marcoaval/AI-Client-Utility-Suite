@@ -19,6 +19,7 @@ function harness() {
     tick: milliseconds => { now += milliseconds; state.onTick(milliseconds, now); },
     setTimeout: (resolve, milliseconds) => { now += milliseconds; state.onTick(milliseconds, now); resolve(); },
     containers: () => state.containers,
+    nativeChats: () => state.links.map(link => ({ href: link.getAttribute('href'), title: link.getAttribute('href') })),
     nativeMenu: async chat => {
       assert.ok(await context.helpers.locateChatLink(chat.href), `Located ${chat.href} before opening its menu`);
       state.current = chat;
@@ -33,14 +34,16 @@ function harness() {
   });
   vm.runInContext(source.slice(0, source.lastIndexOf('  cachedHistory = loadPersistentChatCache();')) + `
     scrollContainersForChats = containers;
+    getChatLinks = nativeChats;
     openChatMenu = nativeMenu;
     menuDeleteAction = deleteCommand;
     confirmationDeleteAction = confirmation;
     confirmationArchiveAction = () => null;
     activate = element => element.click();
-    this.helpers = { locateChatLink, chatLinkElements, deleteChat, runChatBatch, numberChats, parseNumberRange, chatMatchesNumberRange };
+    this.helpers = { locateChatLink, loadAllChats, rememberChats, chatLinkElements, deleteChat, runChatBatch, numberChats, parseNumberRange, chatMatchesNumberRange };
   })();`, context);
   state.h = context.helpers;
+  state.storage = storage;
   state.link = href => ({ getAttribute: name => name === 'href' ? href : null });
   state.container = () => ({
     isConnected: true, scrollTop: 0, scrollHeight: 200, clientHeight: 200, events: 0,
@@ -85,6 +88,39 @@ test('lookup scans the entire growing history without a 330-row or total-time cu
   };
   assert.equal((await s.h.locateChatLink('/c/oldest')).getAttribute('href'), '/c/oldest');
   assert.equal(pages, 450);
+});
+
+test('history count includes all lazy pages beyond the former 500-pass scan cutoff', async () => {
+  const s = harness();
+  const container = s.container();
+  s.containers = [container];
+  let pages = 0;
+  s.onTick = () => {
+    if (pages >= 600 || container.scrollTop < container.scrollHeight - container.clientHeight) return;
+    pages++;
+    s.links.push(s.link(`/c/page-${pages}`));
+    container.scrollHeight += 220;
+  };
+  const chats = await s.h.loadAllChats();
+  assert.equal(chats.length, 600);
+  const scan = JSON.parse(s.storage.get('aiClientUtilitySuite.historyScan.chatgpt'));
+  assert.equal(scan.reachedEnd, true);
+  assert.equal(scan.count, 600);
+  const numbered = s.h.numberChats(chats);
+  assert.equal(s.h.parseNumberRange('1', String(numbered.length), numbered.length).end, 600);
+  assert.equal(s.h.parseNumberRange('1', '601', numbered.length), null);
+});
+
+test('completed scans replace stale counts while incremental loads preserve cached history', () => {
+  const s = harness();
+  const old = Array.from({ length: 850 }, (_, i) => ({ href: `/c/${i}`, title: `Chat ${i}` }));
+  assert.equal(s.h.rememberChats(old).length, 850);
+  assert.equal(s.h.rememberChats(old.slice(0, 330)).length, 850);
+  assert.equal(s.h.rememberChats(old.slice(0, 330), true).length, 330);
+  const next = s.h.rememberChats([...old.slice(0, 330), { href: '/c/new' }], true);
+  assert.equal(next.length, 331);
+  assert.equal(s.h.parseNumberRange('1', '331', next.length).end, 331);
+  assert.equal(s.h.parseNumberRange('1', '332', next.length), null);
 });
 
 test('1–330 selection deletes every target after searching beyond the initial sidebar page', async () => {
