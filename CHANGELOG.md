@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.7.1
+
+### Fixed
+- Cleanup now sends sidebar scroll events and waits for lazy history loading when locating older selected chats. It follows replaced sidebar containers and searches through growing history without a chat-number or total-time cutoff; stalled scrolling remains bounded.
+- Delete and archive wait up to 15 seconds for the native confirmation to close and the sidebar entry to disappear before reporting success.
+- An unresolved native confirmation stops the batch and leaves later chats selected and pending instead of failing every remaining chat.
+- Native sidebar lookup excludes conversation links inside the suite's own windows.
+
 ## 2.7.0
 
 ### Added

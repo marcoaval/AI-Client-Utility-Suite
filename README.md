@@ -14,6 +14,8 @@ Search loaded titles and use **Show chats** to view all chats, selected chats, s
 
 Cleanup displays progress and failure details. **Stop after current chat** lets the current action finish and leaves unprocessed chats selected. Retry asks for confirmation and includes only failed chats that remain selected, using the original archive or delete action. Uncheck any chat you want to keep. Successful chats leave the list. A failed attempt may already have reached the site's confirmation step; close an unfinished confirmation before retrying.
 
+Cleanup searches down the sidebar through older history to locate each selected chat, waiting for additional entries to load. A number range controls the selection, not how far the sidebar can scroll. If a native confirmation remains unfinished, cleanup stops and leaves later chats selected rather than reporting them all as failed. After checking the unfinished action, use **Retry failed** for the failed chat and the main action button for remaining selected chats.
+
 Use **Lock** beside a chat to prevent the suite from selecting, archiving, or deleting it. **Unlock** makes it available again. Locks are stored separately for ChatGPT and Claude and remain after a history refresh. Keyword protection skips automatic suggestions and ranges but allows manual selection; an individual lock blocks all suite cleanup actions. Locks do not restrict actions taken directly in the client.
 
 ### Cached history and dates
@@ -105,11 +107,11 @@ Your saved Prompt Library data and cleaner filter settings are stored separately
 
 ## Development checks
 
-Run `node --check ai_client_utility_suite.user.js` and `node --test tests/date-indexing.test.cjs` with Node.js to check syntax, templates, prompt compatibility, locks, settings, cleanup batches, and history regression cases.
+Run `node --check ai_client_utility_suite.user.js` and `node --test tests/*.test.cjs` with Node.js to check syntax, templates, prompt compatibility, locks, settings, cleanup batches, and history regression cases. Cleanup tests simulate lazy sidebar loading, replacement containers, a 330-chat deletion batch, and unfinished native confirmations; they do not delete live account chats.
 
 ## Project status
 
-Version 2.7.0 adds a shortcut manager for assigning keyboard shortcuts to tools and saved prompts, alongside offline word-choice checks, field explanations, clearer cleaner selection labels, adjustable letter sizing, troubleshooting, conversation exports, prompt history, bookmarks, and saved views.
+Version 2.7.1 fixes cleanup lookup through older sidebar history and prevents unfinished native confirmations from failing every remaining selected chat.
 
 ## Privacy
 

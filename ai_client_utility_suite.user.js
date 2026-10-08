@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Client Utility Suite
 // @namespace    https://github.com/marcoaval/AI-Client-Utility-Suite
-// @version      2.7.0
+// @version      2.7.1
 // @description  Quality of life tools for ChatGPT and Claude.
 // @author       marcoaval
 // @match        https://chatgpt.com/*
@@ -50150,7 +50150,7 @@ is-buffer/index.js:
 
   function chatLinkElements() {
     const selector = platform() === "Claude" ? 'a[href^="/chat/"]' : 'a[href^="/c/"]';
-    return [...document.querySelectorAll(selector)];
+    return [...document.querySelectorAll(selector)].filter(link => !utilityContains(link));
   }
 
   function inferChatDateLabel(link, boundary = document.body) {
@@ -50494,29 +50494,49 @@ is-buffer/index.js:
     if (link) return link;
 
     const containers = scrollContainersForChats();
-    for (const container of containers) {
+    for (let container of containers) {
       const start = container.scrollTop;
-      const step = Math.max(180, Math.floor(container.clientHeight * 0.72));
 
       container.scrollTop = 0;
-      await sleep(120);
+      container.dispatchEvent(new Event("scroll", { bubbles: true }));
+      await sleep(150);
 
       let stableAtBottom = 0;
-      while (stableAtBottom < 3) {
+      let lastProgressAt = Date.now();
+      while (stableAtBottom < 10 && Date.now() - lastProgressAt < 90000) {
         link = findChatLink(href);
         if (link) return link;
 
+        if (!container.isConnected) {
+          container = scrollContainersForChats()[0];
+          if (!container) break;
+          stableAtBottom = 0;
+        }
+        const step = Math.max(180, Math.floor(container.clientHeight * 0.72));
+        const beforeCount = chatLinkElements().length;
+        const beforeHeight = container.scrollHeight;
+        const beforeTop = container.scrollTop;
         const max = Math.max(0, container.scrollHeight - container.clientHeight);
         const next = Math.min(container.scrollTop + step, max);
         container.scrollTop = next;
-        await sleep(140);
+        container.dispatchEvent(new Event("scroll", { bubbles: true }));
+        await sleep(next >= max - 4 ? 420 : 140);
+
+        link = findChatLink(href);
+        if (link) return link;
+        if (!container.isConnected) continue;
 
         const currentMax = Math.max(0, container.scrollHeight - container.clientHeight);
-        if (container.scrollTop >= currentMax - 4) stableAtBottom++;
+        const grew = container.scrollHeight > beforeHeight + 4 || chatLinkElements().length > beforeCount;
+        if (grew || container.scrollTop > beforeTop + 4) lastProgressAt = Date.now();
+        if (!grew && container.scrollTop >= currentMax - 4) stableAtBottom++;
         else stableAtBottom = 0;
       }
 
-      container.scrollTop = start;
+      if (container) {
+        container.scrollTop = start;
+        container.dispatchEvent(new Event("scroll", { bubbles: true }));
+      }
       await sleep(80);
     }
 
@@ -50611,7 +50631,7 @@ is-buffer/index.js:
 
   async function archiveChat(chat) {
     if (isChatLocked(chat)) throw new Error('This chat is locked. Unlock it in Chat Cleaner first.');
-    if (confirmationDeleteAction() || confirmationArchiveAction()) throw new Error('Close the existing chat confirmation before retrying.');
+    if (confirmationDeleteAction() || confirmationArchiveAction()) throw cleanupBlocked('Close the existing chat confirmation before retrying.');
     await openChatMenu(chat);
 
     const archiveAction = await waitFor(menuArchiveAction, 3000, 80);
@@ -50625,7 +50645,8 @@ is-buffer/index.js:
       activate(confirmButton);
     }
 
-    const removed = await waitFor(() => !findChatLink(chat.href), 5000, 120);
+    const removed = await waitFor(() => !confirmationArchiveAction() && !findChatLink(chat.href), 15000, 120);
+    if (!removed && confirmationArchiveAction()) throw cleanupBlocked('Archive confirmation is still open. Close it and check the chat before retrying.');
     if (!removed) throw new Error("Archive was selected, but the chat remained visible in the sidebar.");
 
     forgetChat(chat.href);
@@ -50672,9 +50693,15 @@ is-buffer/index.js:
     return null;
   }
 
+  function cleanupBlocked(message) {
+    const error = new Error(message);
+    error.stopsBatch = true;
+    return error;
+  }
+
   async function deleteChat(chat) {
     if (isChatLocked(chat)) throw new Error('This chat is locked. Unlock it in Chat Cleaner first.');
-    if (confirmationDeleteAction() || confirmationArchiveAction()) throw new Error('Close the existing chat confirmation before retrying.');
+    if (confirmationDeleteAction() || confirmationArchiveAction()) throw cleanupBlocked('Close the existing chat confirmation before retrying.');
     await openChatMenu(chat);
 
     const deleteAction = await waitFor(menuDeleteAction, 3000, 80);
@@ -50683,11 +50710,12 @@ is-buffer/index.js:
     activate(deleteAction);
 
     const confirmButton = await waitFor(confirmationDeleteAction, 5000, 100);
-    if (!confirmButton) throw new Error("The Delete command was found, but the confirmation control was not found.");
+    if (!confirmButton) throw cleanupBlocked("The Delete command was found, but the confirmation control was not found. Check the native dialog before retrying.");
 
     activate(confirmButton);
 
-    const removed = await waitFor(() => !findChatLink(chat.href), 5000, 120);
+    const removed = await waitFor(() => !confirmationDeleteAction() && !findChatLink(chat.href), 15000, 120);
+    if (!removed && confirmationDeleteAction()) throw cleanupBlocked('Delete confirmation is still open. Close it and check the chat before retrying.');
     if (!removed) throw new Error("Delete was confirmed, but the chat remained visible in the sidebar.");
 
     forgetChat(chat.href);
@@ -51625,6 +51653,10 @@ is-buffer/index.js:
         result.completed.push(item);
       } catch (error) {
         result.failed.push({ item, message: error instanceof Error ? error.message : String(error) });
+        if (error?.stopsBatch) {
+          result.pending = items.slice(index + 1);
+          break;
+        }
       }
     }
     return result;
